@@ -1,0 +1,164 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{4bbd1a6f-87ae-4fe7-89ea-6d2273f0e2f2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Inc">
+      <UniqueIdentifier>{3fb09559-a013-43dc-9a05-3da221f22b53}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Src">
+      <UniqueIdentifier>{b96bb8bc-6f81-4c18-96d7-a2dc084ec4dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty">
+      <UniqueIdentifier>{c691b1df-8f97-48f7-a73a-5663a26acd22}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\Inc">
+      <UniqueIdentifier>{5812a1fe-5deb-4faa-b300-11603e5391b4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\Src">
+      <UniqueIdentifier>{b9051e2d-3c27-4a6a-8cec-3d32cec2acac}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\Inc\imgui">
+      <UniqueIdentifier>{784e0c6f-b3e9-4cf9-aa88-0a3552651181}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ThirdParty\Src\imgui">
+      <UniqueIdentifier>{0cd3804d-c86f-42f4-bc7b-0f05bc726c78}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Inc\Surtr.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\pch.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\Mesh.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\ShadowMap.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\SurtrArgument.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\SimpleMath.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\StepTimer.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\VHACD.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\d3dx12.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\DDSTextureLoader12.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\ReadData.h">
+      <Filter>ThirdParty\Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imgui.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imgui_impl_dx12.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imgui_impl_win32.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imgui_internal.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imstb_rectpack.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imstb_textedit.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imstb_truetype.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\imgui\imconfig.h">
+      <Filter>ThirdParty\Inc\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\VMACH.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Main.cpp" />
+    <ClCompile Include="Src\Surtr.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\pch.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\ShadowMap.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\SimpleMath.cpp">
+      <Filter>ThirdParty\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\DDSTextureLoader12.cpp">
+      <Filter>ThirdParty\Src</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_impl_dx12.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_impl_win32.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_tables.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_widgets.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_demo.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="ThirdParty\Src\imgui\imgui_draw.cpp">
+      <Filter>ThirdParty\Src\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\VMACH.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shaders\DebugPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\NoShadowPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\PS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\ShadowPS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\ShadowVS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\VS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Shaders\Shader.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="Shaders\Shadow.hlsli">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="ThirdParty\Inc\SimpleMath.inl">
+      <Filter>ThirdParty\Inc</Filter>
+    </None>
+  </ItemGroup>
+</Project>

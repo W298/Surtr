@@ -1,0 +1,7 @@
+.vs
+x64
+imgui.ini
+Resources/texconv.exe
+ThirdParty/*
+!ThirdParty/Inc
+!ThirdParty/Src

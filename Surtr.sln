@@ -1,0 +1,47 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.33529.622
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Surtr", "Surtr.vcxproj", "{C25E5C61-BE40-415F-BFFD-5F65B02BA018}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C9139588-8E29-3C34-BCBA-BA5B01CC41EF} = {C9139588-8E29-3C34-BCBA-BA5B01CC41EF}
+		{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8} = {B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "voro++", "ThirdParty\voro\build\voro++.vcxproj", "{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "assimp", "ThirdParty\assimp\build\code\assimp.vcxproj", "{C9139588-8E29-3C34-BCBA-BA5B01CC41EF}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlibstatic", "ThirdParty\assimp\build\contrib\zlib\zlibstatic.vcxproj", "{56B72623-E6A6-3A2D-9DC3-24CA703DBA61}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C25E5C61-BE40-415F-BFFD-5F65B02BA018}.Debug|x64.ActiveCfg = Debug|x64
+		{C25E5C61-BE40-415F-BFFD-5F65B02BA018}.Debug|x64.Build.0 = Debug|x64
+		{C25E5C61-BE40-415F-BFFD-5F65B02BA018}.Release|x64.ActiveCfg = Release|x64
+		{C25E5C61-BE40-415F-BFFD-5F65B02BA018}.Release|x64.Build.0 = Release|x64
+		{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}.Debug|x64.ActiveCfg = Debug|x64
+		{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}.Debug|x64.Build.0 = Debug|x64
+		{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}.Release|x64.ActiveCfg = Release|x64
+		{B0F9ACA8-5873-3835-B1E2-4CD31E1916F8}.Release|x64.Build.0 = Release|x64
+		{C9139588-8E29-3C34-BCBA-BA5B01CC41EF}.Debug|x64.ActiveCfg = Debug|x64
+		{C9139588-8E29-3C34-BCBA-BA5B01CC41EF}.Debug|x64.Build.0 = Debug|x64
+		{C9139588-8E29-3C34-BCBA-BA5B01CC41EF}.Release|x64.ActiveCfg = Release|x64
+		{C9139588-8E29-3C34-BCBA-BA5B01CC41EF}.Release|x64.Build.0 = Release|x64
+		{56B72623-E6A6-3A2D-9DC3-24CA703DBA61}.Debug|x64.ActiveCfg = Debug|x64
+		{56B72623-E6A6-3A2D-9DC3-24CA703DBA61}.Debug|x64.Build.0 = Debug|x64
+		{56B72623-E6A6-3A2D-9DC3-24CA703DBA61}.Release|x64.ActiveCfg = Release|x64
+		{56B72623-E6A6-3A2D-9DC3-24CA703DBA61}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {916AB497-4222-4DDE-BA8E-D2D166EE4316}
+	EndGlobalSection
+EndGlobal
