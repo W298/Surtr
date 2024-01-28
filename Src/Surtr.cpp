@@ -1,14 +1,10 @@
 #include "pch.h"
 #include "Surtr.h"
 
-#include "VMACH.h"
-
 extern void ExitGame() noexcept;
 
 using namespace DirectX;
 using Microsoft::WRL::ComPtr;
-
-double rnd() { return double(rand()) / RAND_MAX; }
 
 Surtr::Surtr() noexcept :
     m_window(nullptr),
@@ -390,7 +386,6 @@ void Surtr::Render()
 
                     if (ImGui::Button("Next Step"))
                     {
-                        UpdateMeshData(m_meshVec[0]);
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
@@ -1126,181 +1121,7 @@ void Surtr::CreateCommandListDependentResources()
 
 	std::vector<VertexNormalTex> bbVertexData;
 	std::vector<uint32_t> bbIndexData;
-
-    // Incremental method.
-    std::vector<VMACH::Point3D> vertices;
-    for (int v = 0; v < staticVertexData.size(); v++)
-        vertices.emplace_back(staticVertexData[v].position.x, staticVertexData[v].position.y, staticVertexData[v].position.z);
-   
-    VMACH::ConvexHull convexHull(vertices, 600);
-    const std::list<VMACH::Face>& faceList = convexHull.GetFaces();
-
-    std::vector<SimpleMath::Vector3> faceNormalVec;
-    for (const VMACH::Face& f : faceList)
-        faceNormalVec.push_back((f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]));
-
-    SimpleMath::Vector3 centerPos;
-    for (int v = 0; v < vertices.size(); v++)
-        centerPos += vertices[v] / vertices.size();
-
-    std::vector<float> faceNormalMin = std::vector<float>(faceNormalVec.size(), +10000);
-    std::vector<float> faceNormalMax = std::vector<float>(faceNormalVec.size(), -10000);
-
-    std::vector<SimpleMath::Vector3> vvMin = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
-    std::vector<SimpleMath::Vector3> vvMax = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
-
-    for (int v = 0; v < vertices.size(); v++)
-    {
-        for (int f = 0; f < faceNormalVec.size(); f++)
-        {
-            float t = (vertices[v] - centerPos).Dot(faceNormalVec[f]) / faceNormalVec[f].Length();
-
-            if (faceNormalMin[f] > t)
-            {
-                faceNormalMin[f] = t;
-                vvMin[f] = vertices[v];
-            }
-
-            if (faceNormalMax[f] < t)
-            {
-                faceNormalMax[f] = t;
-                vvMax[f] = vertices[v];
-            }
-        }
-    }
-
-	int counter = 0;
-	for (int f = 0; f < faceNormalVec.size(); f++)
-	{
-		auto n = faceNormalVec[f];
-		n.Normalize();
-
-		auto tmp = SimpleMath::Vector3(1, 2, 3);
-		auto u = n.Cross(tmp);
-		u.Normalize();
-        u *= 0.1f;
-
-		auto x = u.Cross(n);
-		x.Normalize();
-        x *= 0.1f;
-
-		{
-			bbVertexData.push_back(VertexNormalTex(vvMax[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] + u));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] + x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMax[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] - u));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] + x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMax[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] + u));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] - x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMax[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] - u));
-			bbVertexData.push_back(VertexNormalTex(vvMax[f] - x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-		}
-
-		{
-			bbVertexData.push_back(VertexNormalTex(vvMin[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] + u));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] + x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMin[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] - u));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] + x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMin[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] + u));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] - x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-
-			bbVertexData.push_back(VertexNormalTex(vvMin[f]));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] - u));
-			bbVertexData.push_back(VertexNormalTex(vvMin[f] - x));
-
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-			bbIndexData.push_back(counter++);
-		}
-	}
-
-	/*int counter = 0;
-	for (const VMACH::Face& f : faceList)
-	{
-		for (int v = 0; v < 3; v++)
-		{
-			bbVertexData.push_back(VertexNormalTex(f.vertices[v]));
-			bbIndexData.push_back(counter + v);
-		}
-		counter += 3;
-	}*/
-
-    {
-        SimpleMath::Vector3 firstInsidePoint;
-        int insidePoint = 0;
-        for (int i = 0; i < vertices.size(); i++)
-        {
-            if (convexHull.Contains(vertices[i]))
-            {
-                firstInsidePoint = vertices[i];
-                insidePoint++;
-            }
-        }
-
-        float vol = 0;
-        for (const VMACH::Face& f : faceList)
-            vol += VMACH::ConvexHull::Volume(f, firstInsidePoint);
-
-        OutputDebugStringWFormat(L"InsidePoint: %f\nVolume: %f", (float)insidePoint / vertices.size(), vol);
-    }
-
-    {
-		int insidePoint = 0;
-		for (int i = 0; i < vertices.size(); i++)
-		{
-			for (int j = 0; j < faceNormalVec.size(); j++)
-			{
-				float t = (vertices[i] - centerPos).Dot(faceNormalVec[j]) / faceNormalVec[j].Length();
-
-				if (faceNormalMin[j] <= t && t <= faceNormalMax[j])
-				{
-					insidePoint++;
-					break;
-				}
-			}
-		}
-
-        OutputDebugStringWFormat(L"InsidePoint: %f\n", (float)insidePoint / vertices.size());
-    }
+    CreateACH(staticVertexData, bbVertexData, bbIndexData);
 
 	ComPtr<ID3D12Resource> bbVertexUploadHeap;
 	ComPtr<ID3D12Resource> bbIndexUploadHeap;
@@ -1474,8 +1295,377 @@ void Surtr::OnDeviceLost()
     CreateCommandListDependentResources();
 }
 
+double distance(DirectX::SimpleMath::Plane plane, VMACH::Point3D p1)
+{
+    return plane.Normal().Dot(p1) + plane.w;
+}
+
+VMACH::Point3D intersectionPoint(DirectX::SimpleMath::Plane plane, VMACH::Point3D p1, VMACH::Point3D p2)
+{
+    return p1 + (p2 - p1) * (-distance(plane, p1) / plane.Normal().Dot(p2 - p1));
+}
+
+std::vector<VMACH::Edge> Surtr::ClippingEdge(
+    _In_ std::vector<VMACH::Edge> polygon, 
+    _In_ std::vector<std::pair<DirectX::SimpleMath::Plane, bool>> planeVec)
+{
+	double d1, d2 = 0;
+	for (int p = 0; p < planeVec.size(); p++)
+	{
+		if (polygon.size() == 0)
+			return polygon;
+
+        std::vector<VMACH::Edge> clippedPolygon;
+        std::vector<VMACH::Point3D> onPlanePoints;
+
+        for (int e = 0; e < polygon.size(); e++)
+        {
+			d1 = distance(planeVec[p].first, polygon[e].endpoints[0]);
+            d2 = distance(planeVec[p].first, polygon[e].endpoints[1]);
+
+            if (planeVec[p].second)
+            {
+				if ((d1 >= -EPSILON) && (d2 >= -EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+				else if ((d1 >= -EPSILON) && (d2 < EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(polygon[e].endpoints[0], intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1])));
+                    onPlanePoints.push_back(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+				else if ((d1 < EPSILON) && (d2 >= -EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]), polygon[e].endpoints[1]));
+                    onPlanePoints.push_back(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+            }
+            else
+            {
+				if ((d1 <= EPSILON) && (d2 <= EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+				else if ((d1 <= EPSILON) && (d2 > -EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(polygon[e].endpoints[0], intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1])));
+                    onPlanePoints.push_back(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+				else if ((d1 > -EPSILON) && (d2 <= EPSILON))
+				{
+					clippedPolygon.push_back(VMACH::Edge(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]), polygon[e].endpoints[1]));
+                    onPlanePoints.push_back(intersectionPoint(planeVec[p].first, polygon[e].endpoints[0], polygon[e].endpoints[1]));
+				}
+            }
+        }
+
+        // #TEST with creating convex.
+		/*std::vector<VMACH::Point3D> vv;
+		for (int e = 0; e < clippedPolygon.size(); e++)
+		{
+			if (vv.end() == std::find_if(vv.begin(), vv.end(), [&](const VMACH::Point3D& p) { return SimpleMath::Vector3::Distance(p, clippedPolygon[e].endpoints[0]) < EPSILON; }))
+				vv.push_back(clippedPolygon[e].endpoints[0]);
+
+			if (vv.end() == std::find_if(vv.begin(), vv.end(), [&](const VMACH::Point3D& p) { return SimpleMath::Vector3::Distance(p, clippedPolygon[e].endpoints[1]) < EPSILON; }))
+				vv.push_back(clippedPolygon[e].endpoints[1]);
+		}
+
+		VMACH::ConvexHull h(vv, 0);
+		auto edgeList = h.GetEdges();
+
+		std::vector<VMACH::Edge> edgeVec;
+		for (const VMACH::Edge& e : edgeList)
+			edgeVec.push_back(e);*/
+
+        // #ERROR on plane edge count does not match with point count.
+        VMACH::ConvexHull h(onPlanePoints, 0);
+        auto edgeList = h.GetEdges();
+
+		std::vector<VMACH::Edge> edgeVec;
+		for (const VMACH::Edge& e : edgeList)
+			edgeVec.push_back(e);
+
+        clippedPolygon.insert(clippedPolygon.end(), edgeVec.begin(), edgeVec.end());
+
+		polygon = clippedPolygon;
+	}
+
+	return polygon;
+}
+
+void Surtr::CreateACH(
+    _In_ const std::vector<VertexNormalTex>& visualMeshVertexData, 
+    _Out_ std::vector<VertexNormalTex>& achVertexData, 
+    _Out_ std::vector<uint32_t>& achIndexData)
+{
+    achVertexData = std::vector<VertexNormalTex>();
+    achIndexData = std::vector<uint32_t>();
+
+    // 1. Create intermediate convex hull with limit count.
+    std::vector<VMACH::Point3D> vertices;
+    for (int v = 0; v < visualMeshVertexData.size(); v++)
+        vertices.emplace_back(visualMeshVertexData[v].position);
+
+    VMACH::ConvexHull intermediateConvexHull(vertices, 20);
+    const std::list<VMACH::Face>& faceList = intermediateConvexHull.GetFaces();
+
+    // 2. Create convex hull (k-dop) using face normals of intermediate convex hull.
+    std::vector<SimpleMath::Vector3> faceNormalVec;
+    for (const VMACH::Face& f : faceList)
+        faceNormalVec.push_back((f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]));
+
+    faceNormalVec.push_back(SimpleMath::Vector3(+1, +0, +0));
+    faceNormalVec.push_back(SimpleMath::Vector3(+0, +1, +0));
+    faceNormalVec.push_back(SimpleMath::Vector3(+0, +0, +1));
+    faceNormalVec.push_back(SimpleMath::Vector3(-1, +0, +0));
+    faceNormalVec.push_back(SimpleMath::Vector3(+0, -1, +0));
+    faceNormalVec.push_back(SimpleMath::Vector3(+0, +0, -1));
+
+    SimpleMath::Vector3 vertexCenterPos;
+    for (int v = 0; v < vertices.size(); v++)
+        vertexCenterPos += vertices[v] / vertices.size();
+
+    std::vector<float> faceNormalMin = std::vector<float>(faceNormalVec.size(), +10000);
+    std::vector<float> faceNormalMax = std::vector<float>(faceNormalVec.size(), -10000);
+
+    std::vector<SimpleMath::Vector3> faceNormalMinPos = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
+    std::vector<SimpleMath::Vector3> faceNormalMaxPos = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
+
+    for (int v = 0; v < vertices.size(); v++)
+    {
+        for (int f = 0; f < faceNormalVec.size(); f++)
+        {
+            float t = (vertices[v] - vertexCenterPos).Dot(faceNormalVec[f]) / faceNormalVec[f].Length();
+
+            if (faceNormalMin[f] > t)
+            {
+                faceNormalMin[f] = t;
+                faceNormalMinPos[f] = vertices[v];
+            }
+
+            if (faceNormalMax[f] < t)
+            {
+                faceNormalMax[f] = t;
+                faceNormalMaxPos[f] = vertices[v];
+            }
+        }
+    }
+
+    std::vector<VMACH::Edge> bbEdgeVec =
+    {
+        VMACH::Edge(SimpleMath::Vector3(-0.5f, -0.5f, -0.5f), SimpleMath::Vector3(+0.5f, -0.5f, -0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(+0.5f, -0.5f, -0.5f), SimpleMath::Vector3(+0.5f, -0.5f, +0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(+0.5f, -0.5f, +0.5f), SimpleMath::Vector3(-0.5f, -0.5f, +0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(-0.5f, -0.5f, +0.5f), SimpleMath::Vector3(-0.5f, -0.5f, -0.5f)),
+        
+		VMACH::Edge(SimpleMath::Vector3(-0.5f, +0.5f, -0.5f), SimpleMath::Vector3(+0.5f, +0.5f, -0.5f)),
+		VMACH::Edge(SimpleMath::Vector3(+0.5f, +0.5f, -0.5f), SimpleMath::Vector3(+0.5f, +0.5f, +0.5f)),
+		VMACH::Edge(SimpleMath::Vector3(+0.5f, +0.5f, +0.5f), SimpleMath::Vector3(-0.5f, +0.5f, +0.5f)),
+		VMACH::Edge(SimpleMath::Vector3(-0.5f, +0.5f, +0.5f), SimpleMath::Vector3(-0.5f, +0.5f, -0.5f)),
+
+		VMACH::Edge(SimpleMath::Vector3(-0.5f, -0.5f, -0.5f), SimpleMath::Vector3(-0.5f, +0.5f, -0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(+0.5f, -0.5f, -0.5f), SimpleMath::Vector3(+0.5f, +0.5f, -0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(+0.5f, -0.5f, +0.5f), SimpleMath::Vector3(+0.5f, +0.5f, +0.5f)),
+        VMACH::Edge(SimpleMath::Vector3(-0.5f, -0.5f, +0.5f), SimpleMath::Vector3(-0.5f, +0.5f, +0.5f)),
+    };
+
+	float maxX = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.x < p2.x; })).x;
+	float maxY = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.y < p2.y; })).y;
+	float maxZ = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.z < p2.z; })).z;
+
+	float minX = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.x < p2.x; })).x;
+	float minY = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.y < p2.y; })).y;
+	float minZ = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.z < p2.z; })).z;
+
+    VMACH::Point3D bbCenter = VMACH::Point3D((maxX + minX) / 2, (maxY + minY) / 2, (maxZ + minZ) / 2);
+
+    for (int i = 0; i < bbEdgeVec.size(); i++)
+    {
+		bbEdgeVec[i].endpoints[0] *= VMACH::Point3D((maxX - minX), (maxY - minY), (maxZ - minZ));
+		bbEdgeVec[i].endpoints[1] *= VMACH::Point3D((maxX - minX), (maxY - minY), (maxZ - minZ));
+
+        bbEdgeVec[i].endpoints[0] += bbCenter;
+        bbEdgeVec[i].endpoints[1] += bbCenter;
+    }
+
+    std::vector<std::pair<DirectX::SimpleMath::Plane, bool>> planeVec;
+    for (int f = 0; f < 5; f++)
+    {
+        planeVec.emplace_back(SimpleMath::Plane(faceNormalMaxPos[f], faceNormalVec[f]), false);
+        planeVec.emplace_back(SimpleMath::Plane(faceNormalMinPos[f], faceNormalVec[f]), true);
+    }
+     
+    std::vector<VMACH::Edge> clippedBB = ClippingEdge(bbEdgeVec, planeVec);
+    
+    std::vector<VMACH::Point3D> clippedVertexData;
+    for (int e = 0; e < clippedBB.size(); e++)
+    {
+        if (clippedVertexData.end() == std::find_if(clippedVertexData.begin(), clippedVertexData.end(), [&](const VMACH::Point3D& p) { return SimpleMath::Vector3::Distance(p, clippedBB[e].endpoints[0]) < EPSILON; }))
+            clippedVertexData.push_back(clippedBB[e].endpoints[0]);
+        
+        if (clippedVertexData.end() == std::find_if(clippedVertexData.begin(), clippedVertexData.end(), [&](const VMACH::Point3D& p) { return SimpleMath::Vector3::Distance(p, clippedBB[e].endpoints[1]) < EPSILON; }))
+            clippedVertexData.push_back(clippedBB[e].endpoints[1]);
+    }
+
+	VMACH::ConvexHull finalConvexHull(clippedVertexData, 0);
+
+    int counter = 0;
+    for (const VMACH::Face& f : finalConvexHull.GetFaces())
+    {
+        achVertexData.push_back(VertexNormalTex(f.vertices[0]));
+        achVertexData.push_back(VertexNormalTex(f.vertices[1]));
+        achVertexData.push_back(VertexNormalTex(f.vertices[2]));
+
+        achIndexData.push_back(counter++);
+        achIndexData.push_back(counter++);
+        achIndexData.push_back(counter++);
+    }
+
+    // Render k-dop.
+    /*
+    int counter = 0;
+    for (int f = 0; f < faceNormalVec.size(); f++)
+    {
+        auto n = faceNormalVec[f];
+        n.Normalize();
+
+        auto tmp = SimpleMath::Vector3(1, 2, 3);
+        auto u = n.Cross(tmp);
+        u.Normalize();
+        u *= 0.3f;
+
+        auto x = u.Cross(n);
+        x.Normalize();
+        x *= 0.3f;
+
+        {
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] + u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] + x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] - u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] + x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] + u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] - x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] - u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMaxVert[f] - x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+        }
+
+        {
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] + u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] + x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] - u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] + x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] + u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] - x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f]));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] - u));
+            achVertexData.push_back(VertexNormalTex(faceNormalMinVert[f] - x));
+
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+            achIndexData.push_back(counter++);
+        }
+    }
+    */
+
+    // Render intermediate convex hull.
+    /*int counter = 0;
+    for (const VMACH::Face& f : faceList)
+    {
+        for (int v = 0; v < 3; v++)
+        {
+            bbVertexData.push_back(VertexNormalTex(f.vertices[v]));
+            bbIndexData.push_back(counter + v);
+        }
+        counter += 3;
+    }*/
+
+    // Test intermediate convex hull.
+    {
+        SimpleMath::Vector3 firstInsidePoint;
+        int insidePoint = 0;
+        for (int i = 0; i < vertices.size(); i++)
+        {
+            if (intermediateConvexHull.Contains(vertices[i]))
+            {
+                firstInsidePoint = vertices[i];
+                insidePoint++;
+            }
+        }
+
+        float vol = 0;
+        for (const VMACH::Face& f : faceList)
+            vol += VMACH::ConvexHull::Volume(f, firstInsidePoint);
+
+        OutputDebugStringWFormat(L"InsidePoint: %f\nVolume: %f\n", (float)insidePoint / vertices.size(), vol);
+    }
+
+    // Test k-dop.
+    {
+        int insidePoint = 0;
+        for (int i = 0; i < vertices.size(); i++)
+        {
+            for (int j = 0; j < faceNormalVec.size(); j++)
+            {
+                float t = (vertices[i] - vertexCenterPos).Dot(faceNormalVec[j]) / faceNormalVec[j].Length();
+
+                if (faceNormalMin[j] <= t && t <= faceNormalMax[j])
+                {
+                    insidePoint++;
+                    break;
+                }
+            }
+        }
+
+        OutputDebugStringWFormat(L"InsidePoint: %f\n", (float)insidePoint / vertices.size());
+    }
+}
+
 void Surtr::CreateTextureResource(
-    _In_ const wchar_t* fileName, _Out_ ID3D12Resource** texture, _In_ ID3D12Resource** uploadHeap, _In_ UINT index) const
+    _In_ const wchar_t* fileName, 
+    _Out_ ID3D12Resource** texture, 
+    _In_ ID3D12Resource** uploadHeap, 
+    _In_ UINT index) const
 {
     std::unique_ptr<uint8_t[]> ddsData;
     std::vector<D3D12_SUBRESOURCE_DATA> subResourceDataVec;
@@ -1684,7 +1874,84 @@ Mesh* Surtr::PrepareMeshResource(
     return mesh;
 }
 
-void Surtr::UpdateMeshData(Mesh* targetMesh)
+void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
+    // ----------> Prepare command list.
+	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
+	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
+	mesh->VertexCount = vertices.size();
+	mesh->IndexCount = indices.size();
+	mesh->VBSize = sizeof(VertexNormalTex) * mesh->VertexCount;
+	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
+
+    ComPtr<ID3D12Resource> vertexUploadHeap;
+    ComPtr<ID3D12Resource> indexUploadHeap;
+
+    {
+		// Create upload heap.
+		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
+		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->VBSize);
+		DX::ThrowIfFailed(
+			m_d3dDevice->CreateCommittedResource(
+				&uploadHeapProp,
+				D3D12_HEAP_FLAG_NONE,
+				&uploadHeapDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(vertexUploadHeap.ReleaseAndGetAddressOf())));
+
+		// Define sub-resource data.
+		D3D12_SUBRESOURCE_DATA subResourceData = {};
+		subResourceData.pData = vertices.data();
+		subResourceData.RowPitch = mesh->VBSize;
+		subResourceData.SlicePitch = mesh->VBSize;
+
+		// Copy the vertex data to the default heap.
+		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), vertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+
+		// Translate vertex buffer state.
+		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			mesh->VB.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		m_commandList->ResourceBarrier(1, &barrier);
+    }
+
+    {
+		// Create upload heap.
+		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
+		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->IBSize);
+		DX::ThrowIfFailed(
+			m_d3dDevice->CreateCommittedResource(
+				&uploadHeapProp,
+				D3D12_HEAP_FLAG_NONE,
+				&uploadHeapDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(indexUploadHeap.ReleaseAndGetAddressOf())));
+
+		// Define sub-resource data.
+		D3D12_SUBRESOURCE_DATA subResourceData = {};
+		subResourceData.pData = indices.data();
+		subResourceData.RowPitch = mesh->IBSize;
+		subResourceData.SlicePitch = mesh->IBSize;
+
+		// Copy the vertex data to the default heap.
+		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), indexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+
+		// Translate vertex buffer state.
+		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
+			mesh->IB.Get(),
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		m_commandList->ResourceBarrier(1, &barrier);
+    }
+
+    // <---------- Close command list.
+	DX::ThrowIfFailed(m_commandList->Close());
+	m_commandQueue->ExecuteCommandLists(1, CommandListCast(m_commandList.GetAddressOf()));
+
+    WaitForGpu();
+
+	vertexUploadHeap.Reset();
+	indexUploadHeap.Reset();
 }

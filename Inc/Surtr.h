@@ -2,6 +2,9 @@
 
 #include "ShadowMap.h"
 #include "Mesh.h"
+#include "VMACH.h"
+
+#define EPSILON 1e-12
 
 class Surtr
 {
@@ -82,6 +85,16 @@ private:
 
     void OnDeviceLost();
 
+    // Core feature functions
+    std::vector<VMACH::Edge> ClippingEdge(
+        _In_ std::vector<VMACH::Edge> polygon, 
+        _In_ std::vector<std::pair<DirectX::SimpleMath::Plane, bool>> planeVec);
+
+    void CreateACH(
+        _In_ const std::vector<VertexNormalTex>& visualMeshVertices,
+        _Out_ std::vector<VertexNormalTex>& achVertexData, 
+        _Out_ std::vector<uint32_t>& achIndexData);
+
     // Helper functions
     void CreateTextureResource(
         _In_ const wchar_t* fileName, 
@@ -102,7 +115,10 @@ private:
         _In_ ID3D12Resource** vertexUploadHeap,
         _In_ ID3D12Resource** indexUploadHeap);
 
-    void UpdateMeshData(Mesh* targetMesh);
+    void UpdateMeshData(
+        Mesh* mesh, 
+        _In_ const std::vector<VertexNormalTex>& vertices, 
+        _In_ const std::vector<uint32_t>& indices);
 
     // Constants
     const DirectX::XMVECTORF32                          DEFAULT_UP_VECTOR       = { 0.f, 1.f, 0.f, 0.f };

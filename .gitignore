@@ -5,3 +5,4 @@ Resources/texconv.exe
 ThirdParty/*
 !ThirdParty/Inc
 !ThirdParty/Src
+.va

@@ -27,6 +27,11 @@ const std::list<VMACH::Face> VMACH::ConvexHull::GetFaces() const
 	return m_faceList;
 }
 
+const std::list<VMACH::Edge> VMACH::ConvexHull::GetEdges() const
+{
+	return m_edgeList;
+}
+
 const std::vector<VMACH::Point3D> VMACH::ConvexHull::GetVertices() const
 {
 	return m_exteriorVertices;
@@ -223,6 +228,9 @@ void VMACH::ConvexHull::ConstructHull()
 		for (const Face& f : m_faceList)
 			m_pointVolume[i] += std::max(0.0f, Volume(f, m_pointCloud[i]));
 	}
+
+	if (m_limitCnt == 0)
+		m_limitCnt = m_pointCloud.size();
 
 	while (m_processedPointCnt < m_limitCnt)
 	{

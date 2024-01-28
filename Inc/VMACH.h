@@ -89,6 +89,7 @@ namespace VMACH
 
 		bool Contains(const Point3D& p) const;
 		const std::list<Face> GetFaces() const;
+		const std::list<Edge> GetEdges() const;
 		const std::vector<Point3D> GetVertices() const;
 
 		static bool Colinear(const Point3D& a, const Point3D& b, const Point3D& c);
