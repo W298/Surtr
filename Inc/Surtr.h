@@ -57,19 +57,8 @@ private:
         uint8_t             padding[104];
     };
 
-	struct VertexNormalTex
-	{
-		DirectX::XMFLOAT3	position;
-		DirectX::XMFLOAT3	normal;
-        DirectX::XMFLOAT2   texCoord;
-
-        explicit VertexNormalTex(
-            const DirectX::XMFLOAT3 position = DirectX::XMFLOAT3(0, 0, 0),
-            const DirectX::XMFLOAT3 normal = DirectX::XMFLOAT3(0, 0, 0),
-            const DirectX::XMFLOAT2 texCoord = DirectX::XMFLOAT2(0, 0)) : position(position), normal(normal), texCoord(texCoord) {}
-	};
-
     void Update(DX::StepTimer const& timer);
+    void UpdateMesh();
     void Render();
 
     void CreateDeviceResources();
@@ -86,6 +75,7 @@ private:
     // Core feature functions
     void CreateACH(
         _In_ const std::vector<VertexNormalTex>& visualMeshVertices,
+        _In_ const int intermediateConvexHullLimit,
         _Out_ std::vector<VertexNormalTex>& achVertexData, 
         _Out_ std::vector<uint32_t>& achIndexData);
 
@@ -105,9 +95,7 @@ private:
     
     Mesh* PrepareMeshResource(
         _In_ const std::vector<VertexNormalTex>& vertices, 
-        _In_ const std::vector<uint32_t>& indices, 
-        _In_ ID3D12Resource** vertexUploadHeap,
-        _In_ ID3D12Resource** indexUploadHeap);
+        _In_ const std::vector<uint32_t>& indices);
 
     void UpdateMeshData(
         Mesh* mesh, 
@@ -122,7 +110,7 @@ private:
 																					0.f, 1.f, 0.f, 0.f,
 																					0.f, 0.f, 1.f, 0.f,
 																					0.f, 0.f, 0.f, 1.f };
-    static constexpr DirectX::XMVECTORF32               GRAY                    = { 0.015f, 0.015f, 0.015f, 1.0f };
+    static constexpr DirectX::XMVECTORF32               GRAY                    = { 0.15f, 0.15f, 0.15f, 1.0f };
 
     // Input
     std::unordered_map<UINT8, bool>                     m_keyTracker;
@@ -214,6 +202,10 @@ private:
     bool												m_renderShadow;
     bool												m_lightRotation;
     bool                                                m_wireframe;
+    
+    // Feature parameters
+    bool                                                m_executeNextStep;
+    int                                                 m_ichLimitCnt;
 
     // WVP matrices
     DirectX::XMMATRIX                                   m_worldMatrix;

@@ -30,7 +30,7 @@ void VMACH::PolygonFace::AddVertex(Vector3 vertex)
 void VMACH::PolygonFace::Rewind()
 {
 	std::reverse(vertexVec.begin(), vertexVec.end());
-	plane = -plane;
+	plane = Plane(vertexVec[0], vertexVec[1], vertexVec[2]);
 }
 
 VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
@@ -42,16 +42,16 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
 		Vector3 point1 = vertexVec[i];
 		Vector3 point2 = vertexVec[(i + 1) % vertexVec.size()];
 
-		if (0 <= clippingFace.CalcDistanceToPoint(point1) && 0 <= clippingFace.CalcDistanceToPoint(point2))
+		if (0 >= clippingFace.CalcDistanceToPoint(point1) && 0 >= clippingFace.CalcDistanceToPoint(point2))
 		{
 			workingFace.AddVertex(point2);
 		}
-		else if (0 <= clippingFace.CalcDistanceToPoint(point1) && 0 > clippingFace.CalcDistanceToPoint(point2))
+		else if (0 >= clippingFace.CalcDistanceToPoint(point1) && 0 < clippingFace.CalcDistanceToPoint(point2))
 		{
 			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
 			workingFace.AddVertex(intersection);
 		}
-		else if (0 > clippingFace.CalcDistanceToPoint(point1) && 0 > clippingFace.CalcDistanceToPoint(point2))
+		else if (0 < clippingFace.CalcDistanceToPoint(point1) && 0 < clippingFace.CalcDistanceToPoint(point2))
 		{
 			continue;
 		}
@@ -108,17 +108,11 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(Polygon3D inPolygon, PolygonFace cli
 		if (TRUE == clippingFace.IsEmpty())
 			break;
 
-		PolygonFace rewindedFace = inPolygon.faceVec[i];
-		rewindedFace.Rewind();
-
-		workingFace = workingFace.ClipFace(rewindedFace);
+		workingFace = workingFace.ClipFace(inPolygon.faceVec[i]);
 	}
 
 	if (FALSE == workingFace.IsEmpty())
-	{
-		workingFace.Rewind();
 		outPolygon.faceVec.push_back(workingFace);
-	}
 
 	return outPolygon;
 }

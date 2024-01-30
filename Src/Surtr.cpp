@@ -47,6 +47,9 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
 	m_renderShadow = true;
     m_lightRotation = false;
     m_wireframe = true;
+    
+    m_executeNextStep = false;
+    m_ichLimitCnt = 5;
 
     m_sceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
     m_sceneBounds.Radius = 10.0f;
@@ -59,7 +62,7 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
     m_camPosition = XMVectorSet(0.0f, 1.0f, 3.0f, 0.0f);
     m_camLookTarget = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
     m_orbitMode = false;
-    m_camMoveSpeed = 3.0f;
+    m_camMoveSpeed = 2.0f;
     m_camRotateSpeed = 0.5f;
 
     m_worldMatrix = XMMatrixIdentity();
@@ -215,6 +218,34 @@ void Surtr::Update(DX::StepTimer const& timer)
     }
 }
 
+void Surtr::UpdateMesh()
+{
+    if (m_executeNextStep)
+    {
+		// ----------> Prepare command list.
+		DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
+		DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
+
+		auto achVertexData = std::vector<VertexNormalTex>();
+		auto achIndexData = std::vector<uint32_t>();
+
+        m_ichLimitCnt += 10;
+        CreateACH(m_meshVec[0]->VertexData, m_ichLimitCnt, achVertexData, achIndexData);
+        
+        delete m_meshVec[2];
+        m_meshVec[2] = PrepareMeshResource(achVertexData, achIndexData);
+        m_meshVec[2]->RenderSolid = false;
+
+        m_executeNextStep = false;
+
+		// <---------- Close command list.
+		DX::ThrowIfFailed(m_commandList->Close());
+		m_commandQueue->ExecuteCommandLists(1, CommandListCast(m_commandList.GetAddressOf()));
+    }
+
+    WaitForGpu();
+}
+
 // Draws the scene.
 void Surtr::Render()
 {
@@ -226,6 +257,9 @@ void Surtr::Render()
 
     WaitForGpu();
 
+    // Update mesh data if needed.
+    UpdateMesh();
+    
     // ----------> Prepare command list.
     DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
     DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
@@ -377,7 +411,6 @@ void Surtr::Render()
                 {
                     const auto io = ImGui::GetIO();
                     ImGui::Begin("Surtr");
-                    ImGui::SetWindowSize(ImVec2(350, 400), ImGuiCond_Always);
 
                     ImGui::Text("%d x %d (Resolution)", m_outputWidth, m_outputHeight);
                     ImGui::Text("%d x %d (Shadow Map Resolution)", m_shadowMapSize, m_shadowMapSize);
@@ -385,7 +418,11 @@ void Surtr::Render()
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-                    if (ImGui::Button("Next Step")) {}
+                    ImGui::Text("ICH included points: %d", m_ichLimitCnt);
+                    if (ImGui::Button("Next Step")) 
+                    {
+                        m_executeNextStep = true;
+                    }
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -1092,30 +1129,16 @@ void Surtr::CreateCommandListDependentResources()
 	
     std::vector<VertexNormalTex> objectVertexData;
     std::vector<uint32_t> objectIndexData;
-    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
-	
-	ComPtr<ID3D12Resource> vertexUploadHeap;
-	ComPtr<ID3D12Resource> indexUploadHeap;
-    Mesh* objectModel = PrepareMeshResource(
-        objectVertexData, 
-        objectIndexData, 
-        vertexUploadHeap.ReleaseAndGetAddressOf(), 
-        indexUploadHeap.ReleaseAndGetAddressOf());
-   
+    LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+    
+    Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
     m_meshVec.push_back(objectModel);
 
 	std::vector<VertexNormalTex> groundVertexData;
 	std::vector<uint32_t> groundIndexData;
     LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.0015f, 0.0015f, 0.0015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
-
-	ComPtr<ID3D12Resource> groundVertexUploadHeap;
-	ComPtr<ID3D12Resource> groundIndexUploadHeap;
-    Mesh* groundModel = PrepareMeshResource(
-        groundVertexData, 
-        groundIndexData, 
-        groundVertexUploadHeap.ReleaseAndGetAddressOf(), 
-        groundIndexUploadHeap.ReleaseAndGetAddressOf());
-
+    
+    Mesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
     m_meshVec.push_back(groundModel);
 
 	// ================================================================================================================
@@ -1124,18 +1147,17 @@ void Surtr::CreateCommandListDependentResources()
 
 	std::vector<VertexNormalTex> convexHullVertexData;
 	std::vector<uint32_t> convexHullIndexData;
-    CreateACH(objectVertexData, convexHullVertexData, convexHullIndexData);
+    CreateACH(objectVertexData, m_ichLimitCnt, convexHullVertexData, convexHullIndexData);
 
-	ComPtr<ID3D12Resource> convexHullVertexUploadHeap;
-	ComPtr<ID3D12Resource> convexHullIndexUploadHeap;
-	Mesh* bbModel = PrepareMeshResource(
-		convexHullVertexData,
-		convexHullIndexData,
-        convexHullVertexUploadHeap.ReleaseAndGetAddressOf(),
-        convexHullIndexUploadHeap.ReleaseAndGetAddressOf());
-    bbModel->RenderSolid = true;
+    if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
+    {
+        Mesh* bbModel = PrepareMeshResource(
+            convexHullVertexData,
+            convexHullIndexData);
+        bbModel->RenderSolid = false;
 
-	m_meshVec.push_back(bbModel);
+        m_meshVec.push_back(bbModel);
+    }
 
     // <---------- Close command list.
     DX::ThrowIfFailed(m_commandList->Close());
@@ -1148,10 +1170,6 @@ void Surtr::CreateCommandListDependentResources()
     {
         textureUploadHeaps[i].Reset();
     }
-    vertexUploadHeap.Reset();
-    indexUploadHeap.Reset();
-    groundVertexUploadHeap.Reset();
-    groundIndexUploadHeap.Reset();
 }
 
 void Surtr::WaitForGpu() noexcept
@@ -1299,7 +1317,8 @@ void Surtr::OnDeviceLost()
 }
 
 void Surtr::CreateACH(
-    _In_ const std::vector<VertexNormalTex>& visualMeshVertexData, 
+    _In_ const std::vector<VertexNormalTex>& visualMeshVertices, 
+    _In_ const int intermediateConvexHullLimit,
     _Out_ std::vector<VertexNormalTex>& achVertexData, 
     _Out_ std::vector<uint32_t>& achIndexData)
 {
@@ -1307,10 +1326,10 @@ void Surtr::CreateACH(
     achIndexData = std::vector<uint32_t>();
 
     // 1. Create intermediate convex hull with limit count.
-    std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertexData.size());
-    std::transform(visualMeshVertexData.begin(), visualMeshVertexData.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+    std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
+    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
 
-    VMACH::ConvexHull ich(vertices, 20);
+    VMACH::ConvexHull ich(vertices, intermediateConvexHullLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
 
 	/*{
@@ -1447,18 +1466,62 @@ void Surtr::CreateACH(
         Vector3 p4 = x - u * 10 - v * 10 + n * 0.001;
 
 		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
+        cf.Rewind();
         return cf;
     };
 
-    std::vector<VMACH::PolygonFace> clippingPolygonVec;
+    VMACH::Polygon3D clippingPolygon;
     for (int f = 0; f < ichFaceNormalVec.size(); f++)
     {
-        clippingPolygonVec.push_back(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
-        clippingPolygonVec.push_back(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
+        clippingPolygon.faceVec.push_back(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
+        clippingPolygon.faceVec.push_back(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
     }
+    
+	/*VMACH::Polygon3D inner;
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
+		Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
+		}));
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
+		Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
+		}));
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+		Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
+		}));
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
+		Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
+		}));
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+		Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
+		}));
+	inner.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
+		Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
+		}));
+
+	for (int f = 0; f < inner.faceVec.size(); f++)
+	{
+		for (int v = 0; v < inner.faceVec[f].vertexVec.size(); v++)
+		{
+			inner.faceVec[f].vertexVec[v] *= 0.5;
+			inner.faceVec[f].vertexVec[v] += bbCenter;
+            inner.faceVec[f].vertexVec[v].y += 1.25;
+		}
+
+		inner.faceVec[f].Rewind();
+	}
+
+    VMACH::Polygon3D poly = bbPolygon.ClipPolygon(inner);
+    */
+
+	VMACH::Polygon3D poly = bbPolygon.ClipPolygon(clippingPolygon);
 
     // 7. Clip bounding box polygon with clipping faces.
-    VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
+    // VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
 
     // Visualize (Triangularization).
     {
@@ -1609,14 +1672,12 @@ void Surtr::LoadModelData(
 	}
 }
 
-Mesh* Surtr::PrepareMeshResource(
-    _In_ const std::vector<VertexNormalTex>& vertices, 
-    _In_ const std::vector<uint32_t>& indices, 
-    _In_ ID3D12Resource** vertexUploadHeap,
-    _In_ ID3D12Resource** indexUploadHeap)
+Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalTex>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
     Mesh* mesh = new Mesh();
 
+    mesh->VertexData = vertices;
+    mesh->IndexData = indices;
     mesh->VertexCount = vertices.size();
     mesh->IndexCount = indices.size();
 	mesh->VBSize = sizeof(VertexNormalTex) * mesh->VertexCount;
@@ -1651,7 +1712,7 @@ Mesh* Surtr::PrepareMeshResource(
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(vertexUploadHeap)));
+				IID_PPV_ARGS(mesh->VertexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
@@ -1660,7 +1721,7 @@ Mesh* Surtr::PrepareMeshResource(
 		subResourceData.SlicePitch = mesh->VBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), *vertexUploadHeap, 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), mesh->VertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -1698,7 +1759,7 @@ Mesh* Surtr::PrepareMeshResource(
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(indexUploadHeap)));
+				IID_PPV_ARGS(mesh->IndexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
@@ -1707,12 +1768,12 @@ Mesh* Surtr::PrepareMeshResource(
 		subResourceData.SlicePitch = mesh->IBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), *indexUploadHeap, 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), mesh->IndexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
             mesh->IB.Get(),
-			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 		m_commandList->ResourceBarrier(1, &barrier);
 	}
 
@@ -1721,19 +1782,14 @@ Mesh* Surtr::PrepareMeshResource(
 
 void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
-    // ----------> Prepare command list.
-	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
-	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
-
 	mesh->VertexCount = vertices.size();
 	mesh->IndexCount = indices.size();
 	mesh->VBSize = sizeof(VertexNormalTex) * mesh->VertexCount;
 	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
 
-    ComPtr<ID3D12Resource> vertexUploadHeap;
-    ComPtr<ID3D12Resource> indexUploadHeap;
-
     {
+        mesh->VertexUploadHeap.Reset();
+
 		// Create upload heap.
 		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
 		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->VBSize);
@@ -1744,7 +1800,7 @@ void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& 
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(vertexUploadHeap.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(mesh->VertexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
@@ -1753,7 +1809,7 @@ void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& 
 		subResourceData.SlicePitch = mesh->VBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), vertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), mesh->VertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
@@ -1763,6 +1819,8 @@ void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& 
     }
 
     {
+        mesh->IndexUploadHeap.Reset();
+
 		// Create upload heap.
 		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
 		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->IBSize);
@@ -1773,7 +1831,7 @@ void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& 
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(indexUploadHeap.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(mesh->IndexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
@@ -1782,21 +1840,12 @@ void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& 
 		subResourceData.SlicePitch = mesh->IBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), indexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), mesh->IndexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
 			mesh->IB.Get(),
-			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 		m_commandList->ResourceBarrier(1, &barrier);
     }
-
-    // <---------- Close command list.
-	DX::ThrowIfFailed(m_commandList->Close());
-	m_commandQueue->ExecuteCommandLists(1, CommandListCast(m_commandList.GetAddressOf()));
-
-    WaitForGpu();
-
-	vertexUploadHeap.Reset();
-	indexUploadHeap.Reset();
 }
