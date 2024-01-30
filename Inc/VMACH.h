@@ -13,22 +13,21 @@ namespace VMACH
 			vertexVec(_vertexVec), plane(DirectX::SimpleMath::Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])) {}
 
 		bool IsEmpty();
-		double CalcDistanceToPoint(DirectX::SimpleMath::Vector3 point);
-		DirectX::SimpleMath::Vector3 GetIntersectionPoint(DirectX::SimpleMath::Vector3 p1, DirectX::SimpleMath::Vector3 p2);
+		double CalcDistanceToPoint(const DirectX::SimpleMath::Vector3& point) const;
+		DirectX::SimpleMath::Vector3 GetIntersectionPoint(const DirectX::SimpleMath::Vector3& p1, const DirectX::SimpleMath::Vector3& p2) const;
 
 		void AddVertex(DirectX::SimpleMath::Vector3 vertex);
 		void Rewind();
 
-		PolygonFace ClipFace(PolygonFace clippingFace);
+		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace);
 	};
 
 	struct Polygon3D
 	{
 		std::vector<PolygonFace> faceVec;
 
-		Polygon3D ClipPolygon(Polygon3D clippingPolygon);
-		Polygon3D ClipFaces(Polygon3D inPolygon, std::vector<PolygonFace> clippingFaceVec);
-		Polygon3D ClipFace(Polygon3D inPolygon, PolygonFace clippingFace);
+		static Polygon3D ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon);
+		static Polygon3D ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace);
 	};
 
 	struct ConvexHullVertex : DirectX::SimpleMath::Vector3
@@ -67,7 +66,7 @@ namespace VMACH
 
 	struct PointHash
 	{
-		std::size_t operator() (const ConvexHullVertex& p) const;
+		std::size_t operator() (const ConvexHullVertex& point) const;
 	};
 
 	class ConvexHull
@@ -76,30 +75,26 @@ namespace VMACH
 		ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt);
 		~ConvexHull() = default;
 
-		bool Contains(const ConvexHullVertex& p) const;
+		bool Contains(const ConvexHullVertex& point) const;
 		const std::list<ConvexHullFace> GetFaces() const;
 		const std::list<ConvexHullEdge> GetEdges() const;
-		const std::vector<ConvexHullVertex> GetVertices() const;
 
-		static bool Colinear(const ConvexHullVertex& a, const ConvexHullVertex& b, const ConvexHullVertex& c);
-		static float Volume(const ConvexHullFace& f, const ConvexHullVertex& p);
-		static int VolumeSign(const ConvexHullFace& f, const ConvexHullVertex& p);
+		static bool Colinear(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3);
+		static float Volume(const ConvexHullFace& face, const ConvexHullVertex& point);
 
 	private:
-		static size_t Key2Edge(const ConvexHullVertex& a, const ConvexHullVertex& b);
-		static ConvexHullVertex FindInnerPoint(const ConvexHullFace* f, const ConvexHullEdge& e);
+		static size_t Key2Edge(const ConvexHullVertex& p1, const ConvexHullVertex& p2);
+		static ConvexHullVertex FindInnerPoint(const ConvexHullFace* face, const ConvexHullEdge& edge);
 		
-		void CreateFace(const ConvexHullVertex& a, const ConvexHullVertex& b, const ConvexHullVertex& c, const ConvexHullVertex& innerPoint);
+		void CreateFace(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3, const ConvexHullVertex& innerPoint);
 		void CreateEdge(const ConvexHullVertex& p1, const ConvexHullVertex& p2, ConvexHullFace& newFace);
 		
-		void AddPointToHull(const ConvexHullVertex& pt);
+		void AddPointToHull(const ConvexHullVertex& point);
 		bool BuildFirstHull();
-		void ConstructHull();
+		void CreateConvexHull();
 		
 		void CleanUp();
 		
-		void ExtractExteriorPoints();
-
 		std::vector<ConvexHullFace*>                         m_visibleFaceVec = {};
 		std::vector<ConvexHullFace*>                         m_addedFaceVec = {};
 
@@ -109,7 +104,6 @@ namespace VMACH
 		std::vector<ConvexHullVertex>                        m_pointCloud = {};
 		std::vector<float>                                   m_pointVolume = {};
 
-		std::vector<ConvexHullVertex>                        m_exteriorVertices = {};
 		std::list<ConvexHullFace>                            m_faceList = {};
 		std::list<ConvexHullEdge>                            m_edgeList = {};
 		std::unordered_map<size_t, ConvexHullEdge*>          m_edgeMap = {};

@@ -8,12 +8,12 @@ bool VMACH::PolygonFace::IsEmpty()
 	return vertexVec.size() == 0;
 }
 
-double VMACH::PolygonFace::CalcDistanceToPoint(DirectX::SimpleMath::Vector3 point)
+double VMACH::PolygonFace::CalcDistanceToPoint(const Vector3& point) const
 {
 	return plane.Normal().Dot(point) + plane.w;
 }
 
-Vector3 VMACH::PolygonFace::GetIntersectionPoint(Vector3 p1, Vector3 p2)
+Vector3 VMACH::PolygonFace::GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const
 {
 	return p1 + (p2 - p1) * (-CalcDistanceToPoint(p1) / plane.Normal().Dot(p2 - p1));
 }
@@ -33,28 +33,37 @@ void VMACH::PolygonFace::Rewind()
 	plane = Plane(vertexVec[0], vertexVec[1], vertexVec[2]);
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
+VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace)
 {
 	PolygonFace	workingFace;
 
-	for (int i = 0; i < vertexVec.size(); i++)
+	for (int i = 0; i < inFace.vertexVec.size(); i++)
 	{
-		Vector3 point1 = vertexVec[i];
-		Vector3 point2 = vertexVec[(i + 1) % vertexVec.size()];
+		Vector3 point1 = inFace.vertexVec[i];
+		Vector3 point2 = inFace.vertexVec[(i + 1) % inFace.vertexVec.size()];
 
-		if (0 >= clippingFace.CalcDistanceToPoint(point1) && 0 >= clippingFace.CalcDistanceToPoint(point2))
+		// (-) distance = inside polygon (plane).
+		// (+) distance = outside polygon (plane).
+		double d1 = clippingFace.CalcDistanceToPoint(point1);
+		double d2 = clippingFace.CalcDistanceToPoint(point2);
+
+		// IN, IN
+		if (d1 <= 0 && d2 <= 0)
 		{
 			workingFace.AddVertex(point2);
 		}
-		else if (0 >= clippingFace.CalcDistanceToPoint(point1) && 0 < clippingFace.CalcDistanceToPoint(point2))
+		// IN, OUT
+		else if (d1 <= 0 && d2 > 0)
 		{
 			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
 			workingFace.AddVertex(intersection);
 		}
-		else if (0 < clippingFace.CalcDistanceToPoint(point1) && 0 < clippingFace.CalcDistanceToPoint(point2))
+		// OUT, OUT
+		else if (d1 > 0 && d2 > 0)
 		{
 			continue;
 		}
+		// OUT, IN
 		else
 		{
 			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
@@ -64,39 +73,27 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
 		}
 	}
 
-	if (workingFace.vertexVec.size() >= 3)
-		return workingFace;
-	else
-		return PolygonFace();
+	return (workingFace.vertexVec.size() >= 3) ? workingFace : PolygonFace();
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(Polygon3D clippingPolygon)
+VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon)
 {
-	Polygon3D workingPolygon = *this;
+	Polygon3D outPolygon = inPolygon;
 
+	// Clip polygon for each faces from clipping polygon.
 	for (int i = 0; i < clippingPolygon.faceVec.size(); i++)
-		workingPolygon = ClipFace(workingPolygon, clippingPolygon.faceVec[i]);
+		outPolygon = ClipFace(outPolygon, clippingPolygon.faceVec[i]);
 
-	return workingPolygon;
+	return outPolygon;
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipFaces(Polygon3D inPolygon, std::vector<PolygonFace> clippingFaceVec)
-{
-	Polygon3D workingPolygon = *this;
-
-	for (int i = 0; i < clippingFaceVec.size(); i++)
-		workingPolygon = ClipFace(workingPolygon, clippingFaceVec[i]);
-
-	return workingPolygon;
-}
-
-VMACH::Polygon3D VMACH::Polygon3D::ClipFace(Polygon3D inPolygon, PolygonFace clippingFace)
+VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
 {
 	// Clip Polygon3D
 	Polygon3D outPolygon;
 	for (int i = 0; i < inPolygon.faceVec.size(); i++)
 	{
-		PolygonFace clippedFace = inPolygon.faceVec[i].ClipFace(clippingFace);
+		PolygonFace clippedFace = PolygonFace::ClipFace(inPolygon.faceVec[i], clippingFace);
 		if (FALSE == clippedFace.IsEmpty())
 			outPolygon.faceVec.push_back(clippedFace);
 	}
@@ -105,10 +102,10 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(Polygon3D inPolygon, PolygonFace cli
 	PolygonFace workingFace = clippingFace;
 	for (int i = 0; i < inPolygon.faceVec.size(); i++)
 	{
-		if (TRUE == clippingFace.IsEmpty())
+		if (TRUE == workingFace.IsEmpty())
 			break;
 
-		workingFace = workingFace.ClipFace(inPolygon.faceVec[i]);
+		workingFace = PolygonFace::ClipFace(workingFace, inPolygon.faceVec[i]);
 	}
 
 	if (FALSE == workingFace.IsEmpty())
@@ -117,21 +114,18 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(Polygon3D inPolygon, PolygonFace cli
 	return outPolygon;
 }
 
-VMACH::ConvexHull::ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt)
+VMACH::ConvexHull::ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt) 
+	: m_pointCloud(pointCloud), m_limitCnt(limitCnt)
 {
-	m_pointCloud = pointCloud;
-	m_limitCnt = limitCnt;
-
 	m_pointVolume = std::vector<float>(m_pointCloud.size(), 0.0f);
-
-	ConstructHull();
+	CreateConvexHull();
 }
 
-bool VMACH::ConvexHull::Contains(const ConvexHullVertex& p) const
+bool VMACH::ConvexHull::Contains(const ConvexHullVertex& point) const
 {
 	for (const ConvexHullFace& f : m_faceList)
 	{
-		if (VolumeSign(f, p) <= 0)
+		if (Volume(f, point) <= 0)
 			return false;
 	}
 
@@ -148,33 +142,28 @@ const std::list<VMACH::ConvexHullEdge> VMACH::ConvexHull::GetEdges() const
 	return m_edgeList;
 }
 
-const std::vector<VMACH::ConvexHullVertex> VMACH::ConvexHull::GetVertices() const
-{
-	return m_exteriorVertices;
-}
-
-bool VMACH::ConvexHull::Colinear(const ConvexHullVertex& a, const ConvexHullVertex& b, const ConvexHullVertex& c)
+bool VMACH::ConvexHull::Colinear(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3)
 {
 	return
-		((c.z - a.z) * (b.y - a.y) - (b.z - a.z) * (c.y - a.y)) == 0 &&
-		((b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z)) == 0 &&
-		((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) == 0;
+		((p3.z - p1.z) * (p2.y - p1.y) - (p2.z - p1.z) * (p3.y - p1.y)) == 0 &&
+		((p2.z - p1.z) * (p3.x - p1.x) - (p2.x - p1.x) * (p3.z - p1.z)) == 0 &&
+		((p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x)) == 0;
 }
 
-float VMACH::ConvexHull::Volume(const ConvexHullFace& f, const ConvexHullVertex& p)
+float VMACH::ConvexHull::Volume(const ConvexHullFace& face, const ConvexHullVertex& point)
 {
 	float vol;
 	float ax, ay, az, bx, by, bz, cx, cy, cz;
 
-	ax = f.vertices[0].x - p.x;
-	ay = f.vertices[0].y - p.y;
-	az = f.vertices[0].z - p.z;
-	bx = f.vertices[1].x - p.x;
-	by = f.vertices[1].y - p.y;
-	bz = f.vertices[1].z - p.z;
-	cx = f.vertices[2].x - p.x;
-	cy = f.vertices[2].y - p.y;
-	cz = f.vertices[2].z - p.z;
+	ax = face.vertices[0].x - point.x;
+	ay = face.vertices[0].y - point.y;
+	az = face.vertices[0].z - point.z;
+	bx = face.vertices[1].x - point.x;
+	by = face.vertices[1].y - point.y;
+	bz = face.vertices[1].z - point.z;
+	cx = face.vertices[2].x - point.x;
+	cy = face.vertices[2].y - point.y;
+	cz = face.vertices[2].z - point.z;
 	vol =
 		ax * (by * cz - bz * cy) +
 		ay * (bz * cx - bx * cz) +
@@ -183,52 +172,44 @@ float VMACH::ConvexHull::Volume(const ConvexHullFace& f, const ConvexHullVertex&
 	return vol;
 }
 
-int VMACH::ConvexHull::VolumeSign(const ConvexHullFace& f, const ConvexHullVertex& p)
-{
-	float vol = Volume(f, p);
-	if (vol == 0)
-		return 0;
-
-	return vol < 0 ? -1 : 1;
-}
-
-size_t VMACH::ConvexHull::Key2Edge(const ConvexHullVertex& a, const ConvexHullVertex& b)
+size_t VMACH::ConvexHull::Key2Edge(const ConvexHullVertex& p1, const ConvexHullVertex& p2)
 {
 	PointHash ph;
-	return ph(a) ^ ph(b);
+	return ph(p1) ^ ph(p2);
 }
 
-VMACH::ConvexHullVertex VMACH::ConvexHull::FindInnerPoint(const ConvexHullFace* f, const ConvexHullEdge& e)
+VMACH::ConvexHullVertex VMACH::ConvexHull::FindInnerPoint(const ConvexHullFace* face, const ConvexHullEdge& edge)
 {
 	for (int i = 0; i < 3; i++)
 	{
-		if (f->vertices[i] == e.endPoints[0])
+		if (face->vertices[i] == edge.endPoints[0])
 			continue;
-		if (f->vertices[i] == e.endPoints[1])
+		if (face->vertices[i] == edge.endPoints[1])
 			continue;
 
-		return f->vertices[i];
+		return face->vertices[i];
 	}
 }
 
-void VMACH::ConvexHull::CreateFace(const ConvexHullVertex& a, const ConvexHullVertex& b, const ConvexHullVertex& c, const ConvexHullVertex& innerPoint)
+void VMACH::ConvexHull::CreateFace(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3, const ConvexHullVertex& innerPoint)
 {
-	// Make sure face is CCW with face normal pointing outward
-	m_faceList.emplace_back(a, b, c);
+	m_faceList.emplace_back(p1, p2, p3);
 	ConvexHullFace& newFace = m_faceList.back();
 
 	m_addedFaceVec.push_back(&newFace);
 
-	if (VolumeSign(newFace, innerPoint) < 0)
+	// If needed, rewind face.
+	if (Volume(newFace, innerPoint) < 0)
 		newFace.Rewind();
 
-	CreateEdge(a, b, newFace);
-	CreateEdge(a, c, newFace);
-	CreateEdge(b, c, newFace);
+	CreateEdge(p1, p2, newFace);
+	CreateEdge(p1, p3, newFace);
+	CreateEdge(p2, p3, newFace);
 }
 
 void VMACH::ConvexHull::CreateEdge(const ConvexHullVertex& p1, const ConvexHullVertex& p2, ConvexHullFace& newFace)
 {
+	// Get hash-key and apply to map.
 	size_t key = Key2Edge(p1, p2);
 
 	if (!m_edgeMap.count(key))
@@ -240,26 +221,28 @@ void VMACH::ConvexHull::CreateEdge(const ConvexHullVertex& p1, const ConvexHullV
 	m_edgeMap[key]->LinkFace(&newFace);
 }
 
-void VMACH::ConvexHull::AddPointToHull(const ConvexHullVertex& pt)
+void VMACH::ConvexHull::AddPointToHull(const ConvexHullVertex& point)
 {
-	// Find the illuminated faces (which will be removed later)
+	// Find the illuminated (will be removed) faces.
 	bool atLeastOneVisible = false;
 	for (ConvexHullFace& face : m_faceList)
 	{
-		if (VolumeSign(face, pt) < 0)
+		if (Volume(face, point) < 0)
 		{
-			face.visible = atLeastOneVisible = true;
+			face.visible = true;
 			m_visibleFaceVec.push_back(&face);
+
+			atLeastOneVisible = true;
 		}
 	}
 
 	if (FALSE == atLeastOneVisible)
 		return;
 
-	// Find the edges to make new tangent surface or to be removed
-	for (auto it = m_edgeList.begin(); it != m_edgeList.end(); it++)
+	// Check edges. If needed, add faces.
+	for (auto itr = m_edgeList.begin(); itr != m_edgeList.end(); itr++)
 	{
-		auto& edge = *it;
+		auto& edge = *itr;
 		auto& face1 = edge.face1;
 		auto& face2 = edge.face2;
 
@@ -275,25 +258,25 @@ void VMACH::ConvexHull::AddPointToHull(const ConvexHullVertex& pt)
 			ConvexHullVertex innerPoint = FindInnerPoint(face2, edge);
 			edge.EraseFace(face2);
 
-			CreateFace(edge.endPoints[0], edge.endPoints[1], pt, innerPoint);
+			CreateFace(edge.endPoints[0], edge.endPoints[1], point, innerPoint);
 		}
 	}
 }
 
 bool VMACH::ConvexHull::BuildFirstHull()
 {
-	const int n = m_pointCloud.size();
-
 	// Not enough points!
-	if (n <= 3)
+	if (m_pointCloud.size() <= 3)
 		return false;
 
+	// Find x max point.
 	const auto v1 = std::max_element(std::begin(m_pointCloud), std::end(m_pointCloud),
 		[](const ConvexHullVertex& a, const ConvexHullVertex& b)
 		{
 			return a.x < b.x;
 		});
 
+	// Find length max point.
 	const auto v2 = std::max_element(std::begin(m_pointCloud), std::end(m_pointCloud),
 		[&](const ConvexHullVertex& a, const ConvexHullVertex& b)
 		{
@@ -301,6 +284,7 @@ bool VMACH::ConvexHull::BuildFirstHull()
 				std::sqrt(pow((b.x - (*v1).x), 2) + pow((b.y - (*v1).y), 2) + pow((b.z - (*v1).z), 2));
 		});
 
+	// Find area max point.
 	const auto v3 = std::max_element(std::begin(m_pointCloud), std::end(m_pointCloud),
 		[&](const ConvexHullVertex& a, const ConvexHullVertex& b)
 		{
@@ -309,6 +293,7 @@ bool VMACH::ConvexHull::BuildFirstHull()
 			return f1.CalcArea() < f2.CalcArea();
 		});
 
+	// Find volume max point.
 	const auto v4 = std::max_element(std::begin(m_pointCloud), std::end(m_pointCloud),
 		[&](const ConvexHullVertex& a, const ConvexHullVertex& b)
 		{
@@ -323,6 +308,7 @@ bool VMACH::ConvexHull::BuildFirstHull()
 
 	m_processedPointCnt = 4;
 
+	// Create tetrahedron.
 	CreateFace(*v1, *v2, *v3, *v4);
 	CreateFace(*v1, *v2, *v4, *v3);
 	CreateFace(*v1, *v3, *v4, *v2);
@@ -331,11 +317,12 @@ bool VMACH::ConvexHull::BuildFirstHull()
 	return true;
 }
 
-void VMACH::ConvexHull::ConstructHull()
+void VMACH::ConvexHull::CreateConvexHull()
 {
 	if (!BuildFirstHull())
 		return;
 
+	// Init volume values.
 	for (int i = 0; i < m_pointCloud.size(); i++)
 	{
 		if (m_pointCloud[i].processed)
@@ -348,8 +335,11 @@ void VMACH::ConvexHull::ConstructHull()
 	if (m_limitCnt == 0)
 		m_limitCnt = m_pointCloud.size();
 
+	// Do until specified count is met.
 	while (m_processedPointCnt < m_limitCnt)
 	{
+		// Greedy algorithm.
+		// Find point index that maximizes volume.
 		int k = std::distance(m_pointVolume.begin(), std::max_element(m_pointVolume.begin(), m_pointVolume.end()));
 
 		AddPointToHull(m_pointCloud[k]);
@@ -358,6 +348,7 @@ void VMACH::ConvexHull::ConstructHull()
 
 		m_processedPointCnt++;
 
+		// Apply changes to volume values.
 		for (int i = 0; i < m_pointCloud.size(); i++)
 		{
 			if (m_pointCloud[i].processed)
@@ -377,8 +368,6 @@ void VMACH::ConvexHull::ConstructHull()
 
 		CleanUp();
 	}
-
-	ExtractExteriorPoints();
 }
 
 void VMACH::ConvexHull::CleanUp()
@@ -386,34 +375,28 @@ void VMACH::ConvexHull::CleanUp()
 	m_visibleFaceVec.clear();
 	m_addedFaceVec.clear();
 
-	auto it = m_edgeList.begin();
-	while (it != m_edgeList.end())
+	// Erase flagged edges.
+	auto itr = m_edgeList.begin();
+	while (itr != m_edgeList.end())
 	{
-		if (it->remove)
+		if (itr->remove)
 		{
-			size_t key = Key2Edge(it->endPoints[0], it->endPoints[1]);
+			size_t key = Key2Edge(itr->endPoints[0], itr->endPoints[1]);
 			m_edgeMap.erase(key);
-			m_edgeList.erase(it++);
+			m_edgeList.erase(itr++);
 		}
-		else it++;
+		else itr++;
 	};
 
+	// Erase flagged faces.
 	std::erase_if(m_faceList, [](const ConvexHullFace& f) { return f.visible; });
-}
-
-void VMACH::ConvexHull::ExtractExteriorPoints()
-{
-	std::unordered_set<ConvexHullVertex, PointHash> exteriorSet;
-	for (const ConvexHullFace& f : m_faceList)
-		for (int i = 0; i < 3; i++)
-			exteriorSet.insert(f.vertices[i]);
-
-	m_exteriorVertices = std::vector<ConvexHullVertex>(exteriorSet.begin(), exteriorSet.end());
 }
 
 VMACH::ConvexHullFace::ConvexHullFace(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3) : visible(false)
 {
-	vertices[0] = p1; vertices[1] = p2; vertices[2] = p3;
+	vertices[0] = p1; 
+	vertices[1] = p2; 
+	vertices[2] = p3;
 }
 
 void VMACH::ConvexHullFace::Rewind()
@@ -431,7 +414,8 @@ float VMACH::ConvexHullFace::CalcArea()
 
 VMACH::ConvexHullEdge::ConvexHullEdge(const ConvexHullVertex& p1, const ConvexHullVertex& p2) : face1(nullptr), face2(nullptr), remove(false)
 {
-	endPoints[0] = p1; endPoints[1] = p2;
+	endPoints[0] = p1;
+	endPoints[1] = p2;
 }
 
 void VMACH::ConvexHullEdge::LinkFace(ConvexHullFace* face)
@@ -450,11 +434,12 @@ void VMACH::ConvexHullEdge::EraseFace(ConvexHullFace* face)
 	(face1 == face ? face1 : face2) = nullptr;
 }
 
-std::size_t VMACH::PointHash::operator()(const ConvexHullVertex& p) const
+std::size_t VMACH::PointHash::operator()(const ConvexHullVertex& point) const
 {
 	std::string sx, sy, sz;
-	sx = std::to_string(p.x);
-	sy = std::to_string(p.y);
-	sz = std::to_string(p.z);
+	sx = std::to_string(point.x);
+	sy = std::to_string(point.y);
+	sz = std::to_string(point.z);
+	
 	return std::hash<std::string>{}(sx + sy + sz);
 }

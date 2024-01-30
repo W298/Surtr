@@ -1518,7 +1518,7 @@ void Surtr::CreateACH(
     VMACH::Polygon3D poly = bbPolygon.ClipPolygon(inner);
     */
 
-	VMACH::Polygon3D poly = bbPolygon.ClipPolygon(clippingPolygon);
+	VMACH::Polygon3D poly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
 
     // 7. Clip bounding box polygon with clipping faces.
     // VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
