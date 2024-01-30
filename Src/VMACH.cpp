@@ -8,90 +8,50 @@ bool VMACH::PolygonFace::IsEmpty()
 	return vertexVec.size() == 0;
 }
 
-bool VMACH::PolygonFace::IsPointInsideFace(Vector3 point)
+double VMACH::PolygonFace::CalcDistanceToPoint(DirectX::SimpleMath::Vector3 point)
 {
-	double determinant = GetPointVsFaceDeterminant(point);
-	return determinant <= 0;
-}
-
-int VMACH::PolygonFace::GetNumberOfEdges()
-{
-	return vertexVec.size();
-}
-
-double VMACH::PolygonFace::GetPointVsFaceDeterminant(Vector3 point)
-{
-	if (vertexVec.size() < 3)
-		throw std::exception("Lack of vertex error.");
-
-	Vector3 a = vertexVec[0];
-	Vector3 b = vertexVec[1];
-	Vector3 c = vertexVec[2];
-	Vector3 x = point;
-
-	Vector3 bDash = b - x;
-	Vector3 cDash = c - x;
-	Vector3 xDash = x - a;
-
-	double determinant = bDash.x * (cDash.y * xDash.z - cDash.z * xDash.y) - bDash.y * (cDash.x * xDash.z - cDash.z * xDash.x) + bDash.z * (cDash.x * xDash.y - cDash.y * xDash.x);
-
-	return determinant;
+	return plane.Normal().Dot(point) + plane.w;
 }
 
 Vector3 VMACH::PolygonFace::GetIntersectionPoint(Vector3 p1, Vector3 p2)
 {
-	double determinantPoint1 = GetPointVsFaceDeterminant(p1);
-	double determinantPoint2 = GetPointVsFaceDeterminant(p2);
-
-	if (determinantPoint1 == determinantPoint2) 
-	{
-		Vector3 average;
-		average = p1 + p2;
-		average /= 2.0;
-
-		return average;
-	}
-	else 
-	{
-		Vector3 intersect;
-		intersect = p2 - p1;
-		intersect *= (0 - determinantPoint1) / (determinantPoint2 - determinantPoint1);
-		intersect += p1;
-
-		return intersect;
-	}
+	return p1 + (p2 - p1) * (-CalcDistanceToPoint(p1) / plane.Normal().Dot(p2 - p1));
 }
 
 void VMACH::PolygonFace::AddVertex(Vector3 vertex)
 {
 	if (vertexVec.end() == std::find(vertexVec.begin(), vertexVec.end(), vertex))
 		vertexVec.push_back(vertex);
+
+	if (vertexVec.size() == 3)
+		plane = Plane(vertexVec[0], vertexVec[1], vertexVec[2]);
 }
 
 void VMACH::PolygonFace::Rewind()
 {
 	std::reverse(vertexVec.begin(), vertexVec.end());
+	plane = -plane;
 }
 
 VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
 {
 	PolygonFace	workingFace;
 
-	for (int i = 0; i < GetNumberOfEdges(); i++)
+	for (int i = 0; i < vertexVec.size(); i++)
 	{
 		Vector3 point1 = vertexVec[i];
 		Vector3 point2 = vertexVec[(i + 1) % vertexVec.size()];
 
-		if (clippingFace.IsPointInsideFace(point1) && clippingFace.IsPointInsideFace(point2))
+		if (0 <= clippingFace.CalcDistanceToPoint(point1) && 0 <= clippingFace.CalcDistanceToPoint(point2))
 		{
 			workingFace.AddVertex(point2);
 		}
-		else if (clippingFace.IsPointInsideFace(point1) && FALSE == clippingFace.IsPointInsideFace(point2))
+		else if (0 <= clippingFace.CalcDistanceToPoint(point1) && 0 > clippingFace.CalcDistanceToPoint(point2))
 		{
 			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
 			workingFace.AddVertex(intersection);
 		}
-		else if (FALSE == clippingFace.IsPointInsideFace(point1) && FALSE == clippingFace.IsPointInsideFace(point2))
+		else if (0 > clippingFace.CalcDistanceToPoint(point1) && 0 > clippingFace.CalcDistanceToPoint(point2))
 		{
 			continue;
 		}
@@ -104,7 +64,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(PolygonFace clippingFace)
 		}
 	}
 
-	if (workingFace.GetNumberOfEdges() >= 3)
+	if (workingFace.vertexVec.size() >= 3)
 		return workingFace;
 	else
 		return PolygonFace();
@@ -116,6 +76,16 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(Polygon3D clippingPolygon)
 
 	for (int i = 0; i < clippingPolygon.faceVec.size(); i++)
 		workingPolygon = ClipFace(workingPolygon, clippingPolygon.faceVec[i]);
+
+	return workingPolygon;
+}
+
+VMACH::Polygon3D VMACH::Polygon3D::ClipFaces(Polygon3D inPolygon, std::vector<PolygonFace> clippingFaceVec)
+{
+	Polygon3D workingPolygon = *this;
+
+	for (int i = 0; i < clippingFaceVec.size(); i++)
+		workingPolygon = ClipFace(workingPolygon, clippingFaceVec[i]);
 
 	return workingPolygon;
 }
@@ -151,16 +121,6 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(Polygon3D inPolygon, PolygonFace cli
 	}
 
 	return outPolygon;
-}
-
-VMACH::Polygon3D VMACH::Polygon3D::ClipFaces(Polygon3D inPolygon, std::vector<PolygonFace> clippingFaceVec)
-{
-	Polygon3D workingPolygon = *this;
-
-	for (int i = 0; i < clippingFaceVec.size(); i++)
-		workingPolygon = ClipFace(workingPolygon, clippingFaceVec[i]);
-
-	return workingPolygon;
 }
 
 VMACH::ConvexHull::ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt)

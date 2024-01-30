@@ -1422,6 +1422,8 @@ void Surtr::CreateACH(
             bbPolygon.faceVec[f].vertexVec[v] *= 1.5;  // #CORRECTION
 			bbPolygon.faceVec[f].vertexVec[v] += bbCenter;
 		}
+
+        bbPolygon.faceVec[f].Rewind();
 	}
 
     // 6. Collect polygon face using ICH face planes.
@@ -1445,8 +1447,6 @@ void Surtr::CreateACH(
         Vector3 p4 = x - u * 10 - v * 10 + n * 0.001;
 
 		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
-		cf.Rewind();
-
         return cf;
     };
 
@@ -1458,7 +1458,7 @@ void Surtr::CreateACH(
     }
 
     // 7. Clip bounding box polygon with clipping faces.
-    const VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
+    VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
 
     // Visualize (Triangularization).
     {
@@ -1468,9 +1468,8 @@ void Surtr::CreateACH(
             Vector3 anchor = poly.faceVec[f].vertexVec[0];
 			for (int v = 1; v < poly.faceVec[f].vertexVec.size() - 1; v++)
 			{
-                // Rewind.
-                Vector3 a = poly.faceVec[f].vertexVec[v + 1];
-                Vector3 b = poly.faceVec[f].vertexVec[v];
+                Vector3 a = poly.faceVec[f].vertexVec[v];
+                Vector3 b = poly.faceVec[f].vertexVec[v + 1];
 
                 achVertexData.push_back(VertexNormalTex(anchor));
                 achVertexData.push_back(VertexNormalTex(a));

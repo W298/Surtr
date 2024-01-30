@@ -6,15 +6,14 @@ namespace VMACH
 	struct PolygonFace
 	{
 		std::vector<DirectX::SimpleMath::Vector3> vertexVec;
+		DirectX::SimpleMath::Plane plane;
 
 		PolygonFace() = default;
-		PolygonFace(std::vector<DirectX::SimpleMath::Vector3> _vertexVec) : vertexVec(_vertexVec) {}
+		PolygonFace(std::vector<DirectX::SimpleMath::Vector3> _vertexVec) : 
+			vertexVec(_vertexVec), plane(DirectX::SimpleMath::Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])) {}
 
 		bool IsEmpty();
-		bool IsPointInsideFace(DirectX::SimpleMath::Vector3 point);
-
-		int GetNumberOfEdges();
-		double GetPointVsFaceDeterminant(DirectX::SimpleMath::Vector3 point);
+		double CalcDistanceToPoint(DirectX::SimpleMath::Vector3 point);
 		DirectX::SimpleMath::Vector3 GetIntersectionPoint(DirectX::SimpleMath::Vector3 p1, DirectX::SimpleMath::Vector3 p2);
 
 		void AddVertex(DirectX::SimpleMath::Vector3 vertex);
@@ -28,8 +27,8 @@ namespace VMACH
 		std::vector<PolygonFace> faceVec;
 
 		Polygon3D ClipPolygon(Polygon3D clippingPolygon);
-		Polygon3D ClipFace(Polygon3D inPolygon, PolygonFace clippingFace);
 		Polygon3D ClipFaces(Polygon3D inPolygon, std::vector<PolygonFace> clippingFaceVec);
+		Polygon3D ClipFace(Polygon3D inPolygon, PolygonFace clippingFace);
 	};
 
 	struct ConvexHullVertex : DirectX::SimpleMath::Vector3
