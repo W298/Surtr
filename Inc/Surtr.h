@@ -4,8 +4,6 @@
 #include "Mesh.h"
 #include "VMACH.h"
 
-#define EPSILON 1e-12
-
 class Surtr
 {
 public:
@@ -86,10 +84,6 @@ private:
     void OnDeviceLost();
 
     // Core feature functions
-    std::vector<VMACH::Edge> ClippingEdge(
-        _In_ std::vector<VMACH::Edge> polygon, 
-        _In_ std::vector<std::pair<DirectX::SimpleMath::Plane, bool>> planeVec);
-
     void CreateACH(
         _In_ const std::vector<VertexNormalTex>& visualMeshVertices,
         _Out_ std::vector<VertexNormalTex>& achVertexData, 
@@ -219,7 +213,7 @@ private:
     // Rendering options
     bool												m_renderShadow;
     bool												m_lightRotation;
-    bool												m_wireframe;
+    bool                                                m_wireframe;
 
     // WVP matrices
     DirectX::XMMATRIX                                   m_worldMatrix;

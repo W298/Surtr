@@ -204,7 +204,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
     	AdjustWindowRect(&rc, dwStyle, FALSE);
 
         HWND hwnd = CreateWindowExW(0, L"SurtrWinClass", g_szAppName, dwStyle,
-            CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top,
+            0, 0, rc.right - rc.left, rc.bottom - rc.top,
             nullptr, nullptr, hInstance,
             g_surtr.get());
 

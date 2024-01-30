@@ -15,6 +15,8 @@
 #define NOHELP
 #define WIN32_LEAN_AND_MEAN
 
+#define EPSILON 1e-12
+
 #include <Windows.h>
 
 #include <wrl/client.h>
