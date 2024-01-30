@@ -115,14 +115,14 @@ private:
         _In_ const std::vector<uint32_t>& indices);
 
     // Constants
-    const DirectX::XMVECTORF32                          DEFAULT_UP_VECTOR       = { 0.f, 1.f, 0.f, 0.f };
-    const DirectX::XMVECTORF32                          DEFAULT_FORWARD_VECTOR  = { 0.f, 0.f, 1.f, 0.f };
-    const DirectX::XMVECTORF32                          DEFAULT_RIGHT_VECTOR    = { 1.f, 0.f, 0.f, 0.f };
-    const DirectX::XMFLOAT4X4                           IDENTITY_MATRIX         = { 1.f, 0.f, 0.f, 0.f,
+    static constexpr DirectX::XMVECTORF32               DEFAULT_UP_VECTOR       = { 0.f, 1.f, 0.f, 0.f };
+    static constexpr DirectX::XMVECTORF32               DEFAULT_FORWARD_VECTOR  = { 0.f, 0.f, 1.f, 0.f };
+    static constexpr DirectX::XMVECTORF32               DEFAULT_RIGHT_VECTOR    = { 1.f, 0.f, 0.f, 0.f };
+    static constexpr DirectX::XMFLOAT4X4                IDENTITY_MATRIX         = { 1.f, 0.f, 0.f, 0.f,
 																					0.f, 1.f, 0.f, 0.f,
 																					0.f, 0.f, 1.f, 0.f,
 																					0.f, 0.f, 0.f, 1.f };
-    const DirectX::XMVECTORF32                          GRAY                    = { 0.015f, 0.015f, 0.015f, 1.0f };
+    static constexpr DirectX::XMVECTORF32               GRAY                    = { 0.015f, 0.015f, 0.015f, 1.0f };
 
     // Input
     std::unordered_map<UINT8, bool>                     m_keyTracker;

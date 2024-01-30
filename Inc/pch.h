@@ -43,21 +43,28 @@
 #include <memory>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
+#include <list>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <windowsx.h>
 
 #ifdef _DEBUG
 	#include <dxgidebug.h>
 #endif
 
+// DX Helper
 #include "StepTimer.h"
 #include "DDSTextureLoader12.h"
 #include "ReadData.h"
+#include "SimpleMath.h"
 
+// imgui
 #include "imgui/imgui_impl_win32.h"
 #include "imgui/imgui_impl_dx12.h"
 
+// assimp
 #include <Importer.hpp>
 #include <scene.h>
 #include <postprocess.h>

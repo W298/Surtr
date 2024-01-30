@@ -4,6 +4,7 @@
 extern void ExitGame() noexcept;
 
 using namespace DirectX;
+using namespace SimpleMath;
 using Microsoft::WRL::ComPtr;
 
 Surtr::Surtr() noexcept :
@@ -1089,15 +1090,15 @@ void Surtr::CreateCommandListDependentResources()
     // #02. Load model vertices and indices.
     // ================================================================================================================
 	
-    std::vector<VertexNormalTex> staticVertexData;
-    std::vector<uint32_t> staticIndexData;
-    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), staticVertexData, staticIndexData);
+    std::vector<VertexNormalTex> objectVertexData;
+    std::vector<uint32_t> objectIndexData;
+    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 	
 	ComPtr<ID3D12Resource> vertexUploadHeap;
 	ComPtr<ID3D12Resource> indexUploadHeap;
     Mesh* objectModel = PrepareMeshResource(
-        staticVertexData, 
-        staticIndexData, 
+        objectVertexData, 
+        objectIndexData, 
         vertexUploadHeap.ReleaseAndGetAddressOf(), 
         indexUploadHeap.ReleaseAndGetAddressOf());
    
@@ -1117,18 +1118,22 @@ void Surtr::CreateCommandListDependentResources()
 
     m_meshVec.push_back(groundModel);
 
-	std::vector<VertexNormalTex> bbVertexData;
-	std::vector<uint32_t> bbIndexData;
-    CreateACH(staticVertexData, bbVertexData, bbIndexData);
+	// ================================================================================================================
+	// #03. Create Approximate Convex Hull with VMACH (Volume Maximize Approximate Convex Hull) method.
+	// ================================================================================================================
 
-	ComPtr<ID3D12Resource> bbVertexUploadHeap;
-	ComPtr<ID3D12Resource> bbIndexUploadHeap;
+	std::vector<VertexNormalTex> convexHullVertexData;
+	std::vector<uint32_t> convexHullIndexData;
+    CreateACH(objectVertexData, convexHullVertexData, convexHullIndexData);
+
+	ComPtr<ID3D12Resource> convexHullVertexUploadHeap;
+	ComPtr<ID3D12Resource> convexHullIndexUploadHeap;
 	Mesh* bbModel = PrepareMeshResource(
-		bbVertexData,
-		bbIndexData,
-        bbVertexUploadHeap.ReleaseAndGetAddressOf(),
-        bbIndexUploadHeap.ReleaseAndGetAddressOf());
-    bbModel->RenderSolid = false;
+		convexHullVertexData,
+		convexHullIndexData,
+        convexHullVertexUploadHeap.ReleaseAndGetAddressOf(),
+        convexHullIndexUploadHeap.ReleaseAndGetAddressOf());
+    bbModel->RenderSolid = true;
 
 	m_meshVec.push_back(bbModel);
 
@@ -1302,16 +1307,15 @@ void Surtr::CreateACH(
     achIndexData = std::vector<uint32_t>();
 
     // 1. Create intermediate convex hull with limit count.
-    std::vector<VMACH::Point3D> vertices;
-    for (int v = 0; v < visualMeshVertexData.size(); v++)
-        vertices.emplace_back(visualMeshVertexData[v].position);
+    std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertexData.size());
+    std::transform(visualMeshVertexData.begin(), visualMeshVertexData.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
 
-    VMACH::ConvexHull intermediateConvexHull(vertices, 20);
-    const std::list<VMACH::ConvexHullFace>& faceList = intermediateConvexHull.GetFaces();
+    VMACH::ConvexHull ich(vertices, 20);
+    const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
 
 	/*{
 		int cnt = 0;
-		for (const VMACH::ConvexHullFace& f : faceList)
+		for (const VMACH::ConvexHullFace& f : ichFaceList)
 		{
 			achVertexData.push_back(VertexNormalTex(f.vertices[0]));
 			achVertexData.push_back(VertexNormalTex(f.vertices[1]));
@@ -1325,118 +1329,120 @@ void Surtr::CreateACH(
 
 	return;*/
 
-    // 2. Create convex hull (k-dop) using face normals of intermediate convex hull.
-    std::vector<SimpleMath::Vector3> faceNormalVec;
-    for (const VMACH::ConvexHullFace& f : faceList)
+    // 2. Collect ICH face normals.
+    std::vector<Vector3> ichFaceNormalVec;
+    for (const VMACH::ConvexHullFace& f : ichFaceList)
     {
-        SimpleMath::Vector3 normal = (f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]);
+        Vector3 normal = (f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]);
         normal.Normalize();
-
-        faceNormalVec.push_back(normal);
+        ichFaceNormalVec.push_back(normal);
     }
 
-    faceNormalVec.push_back(SimpleMath::Vector3(+1, +0, +0));
-    faceNormalVec.push_back(SimpleMath::Vector3(+0, +1, +0));
-    faceNormalVec.push_back(SimpleMath::Vector3(+0, +0, +1));
-    faceNormalVec.push_back(SimpleMath::Vector3(-1, +0, +0));
-    faceNormalVec.push_back(SimpleMath::Vector3(+0, -1, +0));
-    faceNormalVec.push_back(SimpleMath::Vector3(+0, +0, -1));
+    ichFaceNormalVec.push_back(Vector3(+1, +0, +0));
+    ichFaceNormalVec.push_back(Vector3(+0, +1, +0));
+    ichFaceNormalVec.push_back(Vector3(+0, +0, +1));
+    ichFaceNormalVec.push_back(Vector3(-1, +0, +0));
+    ichFaceNormalVec.push_back(Vector3(+0, -1, +0));
+    ichFaceNormalVec.push_back(Vector3(+0, +0, -1));
 
-	float maxX = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.x < p2.x; })).x;
-	float maxY = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.y < p2.y; })).y;
-	float maxZ = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.z < p2.z; })).z;
+    // 3. Calculate bounding box.
+	double maxX = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; })).x;
+    double maxY = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; })).y;
+    double maxZ = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; })).z;
+    double minX = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; })).x;
+    double minY = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; })).y;
+    double minZ = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; })).z;
 
-	float minX = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.x < p2.x; })).x;
-	float minY = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.y < p2.y; })).y;
-	float minZ = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::Point3D& p1, const VMACH::Point3D& p2) { return p1.z < p2.z; })).z;
+	Vector3 bbCenter((maxX + minX) / 2.0, (maxY + minY) / 2.0, (maxZ + minZ) / 2.0);
 
-	VMACH::Point3D bbCenter = VMACH::Point3D((maxX + minX) / 2, (maxY + minY) / 2, (maxZ + minZ) / 2);
-
-	std::vector<float> faceNormalMin = std::vector<float>(faceNormalVec.size(), +10000);
-	std::vector<float> faceNormalMax = std::vector<float>(faceNormalVec.size(), -10000);
+    // 4. Calculate min/max plane for k-DOP generation.
+	std::vector<double> kdopMin(ichFaceNormalVec.size(), DBL_MAX);
+	std::vector<double> kdopMax(ichFaceNormalVec.size(), -DBL_MAX);
     
-    std::vector<SimpleMath::Plane> facePlaneMin = std::vector<SimpleMath::Plane>(faceNormalVec.size());
-    std::vector<SimpleMath::Plane> facePlaneMax = std::vector<SimpleMath::Plane>(faceNormalVec.size());
+    std::vector<Plane> kdopMinPlane(ichFaceNormalVec.size());
+    std::vector<Plane> kdopMaxPlane(ichFaceNormalVec.size());
 
-	std::vector<SimpleMath::Vector3> faceNormalMinPos = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
-	std::vector<SimpleMath::Vector3> faceNormalMaxPos = std::vector<SimpleMath::Vector3>(faceNormalVec.size());
+	std::vector<Vector3> kdopMinVertex(ichFaceNormalVec.size());
+	std::vector<Vector3> kdopMaxVertex(ichFaceNormalVec.size());
 
     for (int v = 0; v < vertices.size(); v++)
     {
-        for (int f = 0; f < faceNormalVec.size(); f++)
+        for (int f = 0; f < ichFaceNormalVec.size(); f++)
         {
-            float t = vertices[v].Dot(faceNormalVec[f]);
+            float t = vertices[v].Dot(ichFaceNormalVec[f]);
 
-            if (faceNormalMin[f] > t)
+            if (kdopMin[f] > t)
             {
-                faceNormalMin[f] = t;
-                facePlaneMin[f] = SimpleMath::Plane(vertices[v], -faceNormalVec[f]);
-                faceNormalMinPos[f] = vertices[v];
+                kdopMin[f] = t;
+                kdopMinPlane[f] = Plane(vertices[v], -ichFaceNormalVec[f]);
+                kdopMinVertex[f] = vertices[v];
             }
 
-            if (faceNormalMax[f] < t)
+            if (kdopMax[f] < t)
             {
-                faceNormalMax[f] = t;
-                facePlaneMax[f] = SimpleMath::Plane(vertices[v], faceNormalVec[f]);
-                faceNormalMaxPos[f] = vertices[v];
+                kdopMax[f] = t;
+                kdopMaxPlane[f] = Plane(vertices[v], ichFaceNormalVec[f]);
+                kdopMaxVertex[f] = vertices[v];
             }
         }
     }
 
-    VMACH::Polygon3D bbPoly;
-	bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(+0.5f, -0.5f, -0.5f), SimpleMath::Vector3(+0.5f, +0.5f, -0.5f),
-		SimpleMath::Vector3(-0.5f, +0.5f, -0.5f), SimpleMath::Vector3(-0.5f, -0.5f, -0.5f)
+    // 5. Init bounding box polygon.
+    VMACH::Polygon3D bbPolygon;
+	bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
+		Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
 		}));
-    bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(+0.5f, -0.5f, +0.5f), SimpleMath::Vector3(+0.5f, +0.5f, +0.5f),
-		SimpleMath::Vector3(+0.5f, +0.5f, -0.5f), SimpleMath::Vector3(+0.5f, -0.5f, -0.5f)
+    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
+		Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
         }));
-    bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(-0.5f, -0.5f, +0.5f), SimpleMath::Vector3(-0.5f, +0.5f, +0.5f),
-		SimpleMath::Vector3(+0.5f, +0.5f, +0.5f), SimpleMath::Vector3(+0.5f, -0.5f, +0.5f)
+    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+		Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
         }));
-    bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(-0.5f, -0.5f, -0.5f), SimpleMath::Vector3(-0.5f, +0.5f, -0.5f),
-		SimpleMath::Vector3(-0.5f, +0.5f, +0.5f), SimpleMath::Vector3(-0.5f, -0.5f, +0.5f)
+    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
+		Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
         }));
-    bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(+0.5f, +0.5f, +0.5f), SimpleMath::Vector3(-0.5f, +0.5f, +0.5f),
-		SimpleMath::Vector3(-0.5f, +0.5f, -0.5f), SimpleMath::Vector3(+0.5f, +0.5f, -0.5f)
+    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+		Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
         }));
-    bbPoly.faceVec.push_back(VMACH::PolygonFace({
-		SimpleMath::Vector3(-0.5f, -0.5f, +0.5f), SimpleMath::Vector3(+0.5f, -0.5f, +0.5f),
-		SimpleMath::Vector3(+0.5f, -0.5f, -0.5f), SimpleMath::Vector3(-0.5f, -0.5f, -0.5f)
+    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+		Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
+		Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
         }));
 
-	for (int i = 0; i < bbPoly.faceVec.size(); i++)
+	for (int f = 0; f < bbPolygon.faceVec.size(); f++)
 	{
-		for (int j = 0; j < bbPoly.faceVec[i].vertexVec.size(); j++)
+		for (int v = 0; v < bbPolygon.faceVec[f].vertexVec.size(); v++)
 		{
-			bbPoly.faceVec[i].vertexVec[j] *= VMACH::Point3D((maxX - minX), (maxY - minY), (maxZ - minZ));
-            bbPoly.faceVec[i].vertexVec[j] *= 1.5;  // #CORRECTION
-			bbPoly.faceVec[i].vertexVec[j] += bbCenter;
+			bbPolygon.faceVec[f].vertexVec[v] *= Vector3((maxX - minX), (maxY - minY), (maxZ - minZ));
+            bbPolygon.faceVec[f].vertexVec[v] *= 1.5;  // #CORRECTION
+			bbPolygon.faceVec[f].vertexVec[v] += bbCenter;
 		}
 	}
 
-    auto collectPolygonFaces = [&](SimpleMath::Plane p, SimpleMath::Vector3 x)
+    // 6. Collect polygon face using ICH face planes.
+    const auto collectPolygonFaces = [&](Plane p, Vector3 x)
     {
 		VMACH::PolygonFace cf;
 
-		auto n = p.Normal();
+		Vector3 n = p.Normal();
 		n.Normalize();
 
-		auto tmp = SimpleMath::Vector3(1, 2, 3);
-		auto u = n.Cross(tmp);
+        Vector3 tmp(1, 2, 3);
+        Vector3 u = n.Cross(tmp);
 		u.Normalize();
 
-		auto v = u.Cross(n);
+        Vector3 v = u.Cross(n);
 		v.Normalize();
 
-		auto p1 = x + u * 10 - v * 10 + n * 0.001;   // #CORRECTION
-		auto p2 = x + u * 10 + v * 10 + n * 0.001;
-		auto p3 = x - u * 10 + v * 10 + n * 0.001;
-		auto p4 = x - u * 10 - v * 10 + n * 0.001;
+        Vector3 p1 = x + u * 10 - v * 10 + n * 0.001;   // #CORRECTION
+        Vector3 p2 = x + u * 10 + v * 10 + n * 0.001;
+        Vector3 p3 = x - u * 10 + v * 10 + n * 0.001;
+        Vector3 p4 = x - u * 10 - v * 10 + n * 0.001;
 
 		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
 		cf.Rewind();
@@ -1444,25 +1450,27 @@ void Surtr::CreateACH(
         return cf;
     };
 
-    auto collection = std::vector<VMACH::PolygonFace>();
-    for (int f = 0; f < faceNormalVec.size(); f++)
+    std::vector<VMACH::PolygonFace> clippingPolygonVec;
+    for (int f = 0; f < ichFaceNormalVec.size(); f++)
     {
-        collection.push_back(collectPolygonFaces(facePlaneMax[f], faceNormalMaxPos[f]));
-        collection.push_back(collectPolygonFaces(facePlaneMin[f], faceNormalMinPos[f]));
+        clippingPolygonVec.push_back(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
+        clippingPolygonVec.push_back(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
     }
 
-    auto poly = bbPoly.ClipFaces(bbPoly, collection);
+    // 7. Clip bounding box polygon with clipping faces.
+    const VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
 
     // Visualize (Triangularization).
     {
         int cnt = 0;
 		for (int f = 0; f < poly.faceVec.size(); f++)
 		{
-            auto anchor = poly.faceVec[f].vertexVec[0];
+            Vector3 anchor = poly.faceVec[f].vertexVec[0];
 			for (int v = 1; v < poly.faceVec[f].vertexVec.size() - 1; v++)
 			{
-                auto a = poly.faceVec[f].vertexVec[v];
-                auto b = poly.faceVec[f].vertexVec[v + 1];
+                // Rewind.
+                Vector3 a = poly.faceVec[f].vertexVec[v + 1];
+                Vector3 b = poly.faceVec[f].vertexVec[v];
 
                 achVertexData.push_back(VertexNormalTex(anchor));
                 achVertexData.push_back(VertexNormalTex(a));
@@ -1475,18 +1483,19 @@ void Surtr::CreateACH(
 		}
     }
 
+    // Add out of convex hull point for testing.
     vertices.emplace_back(-100, -100, -100);
 
 	// #TEST k-DOP.
 	{
 		int insidePoint = 0;
-		for (int i = 0; i < vertices.size(); i++)
+		for (int v = 0; v < vertices.size(); v++)
 		{
-			for (int j = 0; j < faceNormalVec.size(); j++)
+			for (int f = 0; f < ichFaceNormalVec.size(); f++)
 			{
-				float t = vertices[i].Dot(faceNormalVec[j]) / faceNormalVec[j].Length();
+				float t = vertices[v].Dot(ichFaceNormalVec[f]) / ichFaceNormalVec[f].Length();
 
-				if (faceNormalMin[j] <= t && t <= faceNormalMax[j])
+				if (kdopMin[f] <= t && t <= kdopMax[f])
 				{
 					insidePoint++;
 					break;
