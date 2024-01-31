@@ -47,22 +47,24 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
 	m_renderShadow = true;
     m_lightRotation = false;
     m_wireframe = true;
+    m_bbRenderSolid = true;
     
     m_executeNextStep = false;
-    m_ichLimitCnt = 5;
+    m_ichIncludePointLimit = 20;
+    m_ichFaceCnt = 0;
 
     m_sceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
-    m_sceneBounds.Radius = 10.0f;
+    m_sceneBounds.Radius = 100.0f;
 
     m_camUp = DEFAULT_UP_VECTOR;
     m_camForward = DEFAULT_FORWARD_VECTOR;
     m_camRight = DEFAULT_RIGHT_VECTOR;
     m_camYaw = -XM_PI;
     m_camPitch = 0.0f;
-    m_camPosition = XMVectorSet(0.0f, 1.0f, 3.0f, 0.0f);
+    m_camPosition = XMVectorSet(0.0f, 5.0f, 10.0f, 0.0f);
     m_camLookTarget = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
     m_orbitMode = false;
-    m_camMoveSpeed = 2.0f;
+    m_camMoveSpeed = 5.0f;
     m_camRotateSpeed = 0.5f;
 
     m_worldMatrix = XMMatrixIdentity();
@@ -121,7 +123,7 @@ void Surtr::OnKeyUp(UINT8 key)
 void Surtr::OnMouseWheel(float delta)
 {
     // Scroll to adjust move speed.
-    m_camMoveSpeed = std::max(m_camMoveSpeed + delta * 0.0005f, 0.0f);
+    m_camMoveSpeed = std::max(m_camMoveSpeed + delta * 0.005f, 0.0f);
 }
 
 void Surtr::OnMouseMove(int x, int y)
@@ -229,12 +231,11 @@ void Surtr::UpdateMesh()
 		auto achVertexData = std::vector<VertexNormalTex>();
 		auto achIndexData = std::vector<uint32_t>();
 
-        m_ichLimitCnt += 10;
-        CreateACH(m_meshVec[0]->VertexData, m_ichLimitCnt, achVertexData, achIndexData);
+        m_ichIncludePointLimit += 10;
+        CreateACH(m_meshVec[0]->VertexData, m_ichIncludePointLimit, achVertexData, achIndexData);
         
         delete m_meshVec[2];
         m_meshVec[2] = PrepareMeshResource(achVertexData, achIndexData);
-        m_meshVec[2]->RenderSolid = false;
 
         m_executeNextStep = false;
 
@@ -323,7 +324,7 @@ void Surtr::Render()
 			
             for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (m_meshVec[i]->RenderSolid)
+				if (TRUE == m_meshVec[i]->RenderSolid)
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
         }
@@ -390,16 +391,26 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-                if (m_meshVec[i]->RenderSolid)
-				    m_meshVec[i]->Render(m_commandList.Get());
+                if (i == 2)
+                {
+                    if (TRUE == m_bbRenderSolid)
+                        m_meshVec[i]->Render(m_commandList.Get());
+                }
+                else
+                {
+                    if (TRUE == m_meshVec[i]->RenderSolid)
+                        m_meshVec[i]->Render(m_commandList.Get());
+                }
 			}
 
 			m_commandList->SetPipelineState(m_wireframePSO.Get());
 
-            for (int i = 0; i < m_meshVec.size(); i++)
+            if (TRUE == m_wireframe)
             {
-                if (FALSE == m_meshVec[i]->RenderSolid || TRUE == m_wireframe)
+                for (int i = 0; i < m_meshVec.size(); i++)
+                {
                     m_meshVec[i]->Render(m_commandList.Get());
+                }
             }
 			
             // Draw imgui.
@@ -418,8 +429,13 @@ void Surtr::Render()
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-                    ImGui::Text("ICH included points: %d", m_ichLimitCnt);
-                    if (ImGui::Button("Next Step")) 
+                    ImGui::Text("Mesh Vertex Count: %d", m_meshVec[0]->VertexCount);
+
+                    ImGui::Dummy(ImVec2(0.0f, 20.0f));
+
+                    ImGui::Text("ICH Face Count: %d", m_ichFaceCnt);
+                    ImGui::Text("ICH Included Points: %d (%f%% of total)", m_ichIncludePointLimit, m_ichIncludePointLimit * 100.0f / (m_meshVec[0]->VertexCount));
+                    if (ImGui::Button("+10")) 
                     {
                         m_executeNextStep = true;
                     }
@@ -434,6 +450,7 @@ void Surtr::Render()
                     ImGui::Checkbox("Rotate Light", &m_lightRotation);
                     ImGui::Checkbox("Render Shadow", &m_renderShadow);
                     ImGui::Checkbox("Wireframe", &m_wireframe);
+                    ImGui::Checkbox("BB Render Solid", &m_bbRenderSolid);
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -1129,14 +1146,14 @@ void Surtr::CreateCommandListDependentResources()
 	
     std::vector<VertexNormalTex> objectVertexData;
     std::vector<uint32_t> objectIndexData;
-    LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
     
     Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
     m_meshVec.push_back(objectModel);
 
 	std::vector<VertexNormalTex> groundVertexData;
 	std::vector<uint32_t> groundIndexData;
-    LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.0015f, 0.0015f, 0.0015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
+    LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
     
     Mesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
     m_meshVec.push_back(groundModel);
@@ -1147,23 +1164,25 @@ void Surtr::CreateCommandListDependentResources()
 
 	std::vector<VertexNormalTex> convexHullVertexData;
 	std::vector<uint32_t> convexHullIndexData;
-    CreateACH(objectVertexData, m_ichLimitCnt, convexHullVertexData, convexHullIndexData);
+	CreateACH(objectVertexData, m_ichIncludePointLimit, convexHullVertexData, convexHullIndexData);
 
-    if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
-    {
-        Mesh* bbModel = PrepareMeshResource(
-            convexHullVertexData,
-            convexHullIndexData);
-        bbModel->RenderSolid = false;
+	if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
+	{
+		Mesh* bbModel = PrepareMeshResource(
+			convexHullVertexData,
+			convexHullIndexData);
 
-        m_meshVec.push_back(bbModel);
-    }
+		m_meshVec.push_back(bbModel);
+	}
 
     // <---------- Close command list.
     DX::ThrowIfFailed(m_commandList->Close());
     m_commandQueue->ExecuteCommandLists(1, CommandListCast(m_commandList.GetAddressOf()));
 
     WaitForGpu();
+
+    TestACHCreation(objectVertexData, m_ichIncludePointLimit);
+    TestECHCreation(objectVertexData);
 
     // Release no longer needed upload heaps.
     for (int i = 0; i < 4; i++)
@@ -1318,7 +1337,7 @@ void Surtr::OnDeviceLost()
 
 void Surtr::CreateACH(
     _In_ const std::vector<VertexNormalTex>& visualMeshVertices, 
-    _In_ const int intermediateConvexHullLimit,
+    _In_ const int ichIncludePointLimit,
     _Out_ std::vector<VertexNormalTex>& achVertexData, 
     _Out_ std::vector<uint32_t>& achIndexData)
 {
@@ -1329,7 +1348,7 @@ void Surtr::CreateACH(
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
     std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
 
-    VMACH::ConvexHull ich(vertices, intermediateConvexHullLimit);
+    VMACH::ConvexHull ich(vertices, ichIncludePointLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
 
 	/*{
@@ -1357,12 +1376,7 @@ void Surtr::CreateACH(
         ichFaceNormalVec.push_back(normal);
     }
 
-    ichFaceNormalVec.push_back(Vector3(+1, +0, +0));
-    ichFaceNormalVec.push_back(Vector3(+0, +1, +0));
-    ichFaceNormalVec.push_back(Vector3(+0, +0, +1));
-    ichFaceNormalVec.push_back(Vector3(-1, +0, +0));
-    ichFaceNormalVec.push_back(Vector3(+0, -1, +0));
-    ichFaceNormalVec.push_back(Vector3(+0, +0, -1));
+    m_ichFaceCnt = ichFaceNormalVec.size();
 
     // 3. Calculate bounding box.
 	double maxX = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; })).x;
@@ -1373,6 +1387,7 @@ void Surtr::CreateACH(
     double minZ = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; })).z;
 
 	Vector3 bbCenter((maxX + minX) / 2.0, (maxY + minY) / 2.0, (maxZ + minZ) / 2.0);
+    double maxAxisScale = std::max(std::max(maxX - minX, maxY - minY), maxZ - minZ);
 
     // 4. Calculate min/max plane for k-DOP generation.
 	std::vector<double> kdopMin(ichFaceNormalVec.size(), DBL_MAX);
@@ -1460,10 +1475,10 @@ void Surtr::CreateACH(
         Vector3 v = u.Cross(n);
 		v.Normalize();
 
-        Vector3 p1 = x + u * 10 - v * 10 + n * 0.001;   // #CORRECTION
-        Vector3 p2 = x + u * 10 + v * 10 + n * 0.001;
-        Vector3 p3 = x - u * 10 + v * 10 + n * 0.001;
-        Vector3 p4 = x - u * 10 - v * 10 + n * 0.001;
+        Vector3 p1 = x + u * 10 - v * 10 + n * maxAxisScale / 3000.0;   // #CORRECTION
+        Vector3 p2 = x + u * 10 + v * 10 + n * maxAxisScale / 3000.0;
+        Vector3 p3 = x - u * 10 + v * 10 + n * maxAxisScale / 3000.0;
+        Vector3 p4 = x - u * 10 - v * 10 + n * maxAxisScale / 3000.0;
 
 		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
         cf.Rewind();
@@ -1518,10 +1533,8 @@ void Surtr::CreateACH(
     VMACH::Polygon3D poly = bbPolygon.ClipPolygon(inner);
     */
 
-	VMACH::Polygon3D poly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
-
     // 7. Clip bounding box polygon with clipping faces.
-    // VMACH::Polygon3D poly = bbPolygon.ClipFaces(bbPolygon, clippingPolygonVec);
+	VMACH::Polygon3D poly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
 
     // Visualize (Triangularization).
     {
@@ -1545,11 +1558,69 @@ void Surtr::CreateACH(
 		}
     }
 
-    // Add out of convex hull point for testing.
-    vertices.emplace_back(-100, -100, -100);
+	{
+		double vol = 0;
+		for (int f = 0; f < poly.faceVec.size(); f++)
+		{
+			Vector3 anchor = poly.faceVec[f].vertexVec[0];
+			for (int v = 1; v < poly.faceVec[f].vertexVec.size() - 1; v++)
+			{
+				Vector3 a = poly.faceVec[f].vertexVec[v];
+				Vector3 b = poly.faceVec[f].vertexVec[v + 1];
+
+                VMACH::ConvexHullFace chf(anchor, a, b);
+                vol += VMACH::ConvexHull::Volume(chf, VMACH::ConvexHullVertex(0, 5, 0));
+			}
+		}
+
+		OutputDebugStringWFormat(L"ACH Volume: %f\n", vol);
+	}
+}
+
+void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices, _In_ const int intermediateConvexHullLimit)
+{
+	TIMER_INIT;
+	TIMER_START;
+
+    // 1. Create intermediate convex hull with limit count.
+    std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
+    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+
+    VMACH::ConvexHull ich(vertices, intermediateConvexHullLimit);
+    const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
+
+    // 2. Collect ICH face normals.
+    std::vector<Vector3> ichFaceNormalVec;
+    for (const VMACH::ConvexHullFace& f : ichFaceList)
+    {
+        Vector3 normal = (f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]);
+        normal.Normalize();
+        ichFaceNormalVec.push_back(normal);
+    }
+
+    // 3. Calculate min/max plane for k-DOP generation.
+    std::vector<double> kdopMin(ichFaceNormalVec.size(), DBL_MAX);
+    std::vector<double> kdopMax(ichFaceNormalVec.size(), -DBL_MAX);
+
+    for (int v = 0; v < vertices.size(); v++)
+    {
+        for (int f = 0; f < ichFaceNormalVec.size(); f++)
+        {
+            double t = vertices[v].Dot(ichFaceNormalVec[f]);
+
+            kdopMin[f] = std::min(kdopMin[f], t);
+            kdopMax[f] = std::max(kdopMax[f], t);
+        }
+    }
+
+	OutputDebugStringWFormat(L"ACH Time: ");
+	TIMER_STOP_PRINT;
 
 	// #TEST k-DOP.
 	{
+		// Add out of convex hull point for testing.
+		vertices.emplace_back(-100, -100, -100);
+
 		int insidePoint = 0;
 		for (int v = 0; v < vertices.size(); v++)
 		{
@@ -1567,6 +1638,26 @@ void Surtr::CreateACH(
 
 		OutputDebugStringWFormat(L"InsidePoint: %f\n", (float)insidePoint / vertices.size());
 	}
+}
+
+void Surtr::TestECHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices)
+{
+	TIMER_INIT;
+	TIMER_START;
+
+	std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
+	std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+
+	VMACH::ConvexHull ch(vertices, 0);
+
+    OutputDebugStringWFormat(L"ECH Time: ");
+	TIMER_STOP_PRINT;
+
+	double vol = 0;
+	for (const auto& f : ch.GetFaces())
+        vol += VMACH::ConvexHull::Volume(f, VMACH::ConvexHullVertex(0, 5, 0));
+
+	OutputDebugStringWFormat(L"ECH Volume: %f\n", vol);
 }
 
 void Surtr::CreateTextureResource(

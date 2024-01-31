@@ -95,3 +95,20 @@ static void DebugOut(const wchar_t* fmt, ...)
 }
 
 #define OutputDebugStringWFormat(fmt, ...) DebugOut(fmt, __VA_ARGS__);
+
+#define TIMER_INIT \
+    LARGE_INTEGER freq; \
+    LARGE_INTEGER st,en; \
+    double el; \
+    QueryPerformanceFrequency(&freq)
+
+#define TIMER_START QueryPerformanceCounter(&st)
+
+#define TIMER_STOP \
+    QueryPerformanceCounter(&en); \
+    el=(float)(en.QuadPart-st.QuadPart)/freq.QuadPart
+
+#define TIMER_STOP_PRINT \
+    QueryPerformanceCounter(&en); \
+    el=(float)(en.QuadPart-st.QuadPart)/freq.QuadPart; \
+    OutputDebugStringWFormat(L"%f ms\n", el*1000)

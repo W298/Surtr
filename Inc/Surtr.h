@@ -75,9 +75,15 @@ private:
     // Core feature functions
     void CreateACH(
         _In_ const std::vector<VertexNormalTex>& visualMeshVertices,
-        _In_ const int intermediateConvexHullLimit,
+        _In_ const int ichIncludePointLimit,
         _Out_ std::vector<VertexNormalTex>& achVertexData, 
         _Out_ std::vector<uint32_t>& achIndexData);
+
+	void TestACHCreation(
+		_In_ const std::vector<VertexNormalTex>& visualMeshVertices,
+		_In_ const int intermediateConvexHullLimit);
+
+    void TestECHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices);
 
     // Helper functions
     void CreateTextureResource(
@@ -202,10 +208,12 @@ private:
     bool												m_renderShadow;
     bool												m_lightRotation;
     bool                                                m_wireframe;
+    bool                                                m_bbRenderSolid;
     
     // Feature parameters
     bool                                                m_executeNextStep;
-    int                                                 m_ichLimitCnt;
+    int                                                 m_ichIncludePointLimit;
+    int                                                 m_ichFaceCnt;
 
     // WVP matrices
     DirectX::XMMATRIX                                   m_worldMatrix;

@@ -10,7 +10,12 @@ bool VMACH::PolygonFace::IsEmpty()
 
 double VMACH::PolygonFace::CalcDistanceToPoint(const Vector3& point) const
 {
-	return plane.Normal().Dot(point) + plane.w;
+	Vector3 n = plane.Normal();
+	double nx = n.x;
+	double ny = n.y;
+	double nz = n.z;
+	double w = plane.w;
+	return nx * point.x + ny * point.y + nz * point.z + w;
 }
 
 Vector3 VMACH::PolygonFace::GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const
@@ -48,18 +53,18 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const
 		double d2 = clippingFace.CalcDistanceToPoint(point2);
 
 		// IN, IN
-		if (d1 <= 0 && d2 <= 0)
+		if (d1 <= +EPSILON && d2 <= +EPSILON)
 		{
 			workingFace.AddVertex(point2);
 		}
 		// IN, OUT
-		else if (d1 <= 0 && d2 > 0)
+		else if (d1 <= +EPSILON && d2 > -EPSILON)
 		{
 			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
 			workingFace.AddVertex(intersection);
 		}
 		// OUT, OUT
-		else if (d1 > 0 && d2 > 0)
+		else if (d1 > -EPSILON && d2 > -EPSILON)
 		{
 			continue;
 		}
@@ -344,7 +349,7 @@ void VMACH::ConvexHull::CreateConvexHull()
 
 		AddPointToHull(m_pointCloud[k]);
 		m_pointCloud[k].processed = true;
-		m_pointVolume[k] = -10000;
+		m_pointVolume[k] = -FLT_MAX;
 
 		m_processedPointCnt++;
 
