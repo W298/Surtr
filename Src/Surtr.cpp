@@ -1508,15 +1508,27 @@ void Surtr::CreateACH(
     // poly.Render(achVertexData, achIndexData);
 
     // 8. Voronoi diagram generation.
-	voro::container con(minX, maxX, minY, maxY, minZ, maxZ, 2, 2, 2, false, false, false, 8);
+    Vector3 bbMinVec(minX, minY, minZ);
+    Vector3 bbMaxVec(maxX, maxY, maxZ);
+
+    bbMinVec -= bbCenter;
+    bbMaxVec -= bbCenter;
+
+    bbMinVec *= 0.7;
+    bbMaxVec *= 0.7;
+
+    bbMinVec += bbCenter;
+    bbMaxVec += bbCenter;
+
+	voro::container con(bbMinVec.x, bbMaxVec.x, bbMinVec.y, bbMaxVec.y, bbMinVec.z, bbMaxVec.z, 2, 2, 2, false, false, false, 8);
 
 	int i = 0;
 	double x, y, z;
 	while (i < 24)
 	{
-		x = minX + rnd() * (maxX - minX);
-		y = minY + rnd() * (maxY - minY);
-		z = minZ + rnd() * (maxZ - minZ);
+		x = bbMinVec.x + rnd() * (bbMaxVec.x - bbMinVec.x);
+		y = bbMinVec.y + rnd() * (bbMaxVec.y - bbMinVec.y);
+		z = bbMinVec.z + rnd() * (bbMaxVec.z - bbMinVec.z);
 		if (con.point_inside(x, y, z))
 		{
 			con.put(i, x, y, z);
@@ -1568,6 +1580,9 @@ void Surtr::CreateACH(
             }
             cur += cnt + 1;
 
+            if (face.FacePlane.x == 0 || face.FacePlane.y == 0 || face.FacePlane.z == 0)
+                continue;
+
             face.Rewind();
             voroPoly.FaceVec.push_back(face);
         }
@@ -1584,6 +1599,11 @@ void Surtr::CreateACH(
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
 
+		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
+		outer.Normalize();
+		outer *= 2;
+
+		voroPolyVec[i].Translate(outer);
 		voroPolyVec[i].Render(achVertexData, achIndexData, color);
 	}*/
 
@@ -1598,7 +1618,7 @@ void Surtr::CreateACH(
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
-		outer *= 4;
+		outer *= 2;
 
         clippedPoly.Translate(outer);
         clippedPoly.Render(achVertexData, achIndexData, color);

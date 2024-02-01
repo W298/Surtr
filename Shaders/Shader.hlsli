@@ -106,15 +106,18 @@ PS_OUTPUT PS(VS_OUTPUT input)
     float3 texColor = input.color;
     float3 normal = input.normal;
     
+    if (normal.x == 0 && normal.y == 0 && normal.z == 0)
+    {
+        output.color = float4(texColor, 1);
+        return output;
+    }
+    
     float3 diffuse = saturate(dot(normal, -cb.lightDirection.xyz)) * cb.lightColor.xyz;
     float3 ambient = float3(0.08f, 0.08f, 0.08f) * cb.lightColor.xyz;
-
     float shadowFactor = CalcShadowFactor(mul(float4(input.catPos, 1.0f), cb.shadowTransform));
 
-    float4 final = float4(
-		saturate((diffuse * saturate(shadowFactor) + ambient)) * texColor.rgb, 1);
+    float4 final = float4(saturate((diffuse * saturate(shadowFactor) + ambient)) * texColor.rgb, 1);
     
     output.color = final;
-
     return output;
 }
