@@ -1,49 +1,70 @@
 #ifndef VMACH_H
 #define VMACH_H
 
+#include "Mesh.h"
+
 namespace VMACH
 {
+	using DirectX::SimpleMath::Plane;
+	using DirectX::SimpleMath::Vector3;
+
 	struct PolygonFace
 	{
-		std::vector<DirectX::SimpleMath::Vector3> vertexVec;
-		DirectX::SimpleMath::Plane plane;
+	public:
+		std::vector<Vector3>		VertexVec;
+		Plane						FacePlane;
 
 		PolygonFace() = default;
-		PolygonFace(std::vector<DirectX::SimpleMath::Vector3> _vertexVec) : 
-			vertexVec(_vertexVec), plane(DirectX::SimpleMath::Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])) {}
+		PolygonFace(std::vector<Vector3> _vertexVec) : 
+			VertexVec(_vertexVec), 
+			FacePlane(Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])) {}
 
 		bool IsEmpty();
-		double CalcDistanceToPoint(const DirectX::SimpleMath::Vector3& point) const;
-		DirectX::SimpleMath::Vector3 GetIntersectionPoint(const DirectX::SimpleMath::Vector3& p1, const DirectX::SimpleMath::Vector3& p2) const;
+		double CalcDistanceToPoint(const Vector3& point) const;
+		Vector3 GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const;
+		Vector3 GetCentriod() const;
 
-		void AddVertex(DirectX::SimpleMath::Vector3 vertex);
+		void AddVertex(Vector3 vertex);
 		void Rewind();
 
-		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace);
+		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec);
 	};
 
 	struct Polygon3D
 	{
-		std::vector<PolygonFace> faceVec;
+	public:
+		std::vector<PolygonFace>	FaceVec;
+
+		Polygon3D() = default;
+
+		Vector3 GetCentroid() const;
+		void Render(
+			std::vector<VertexNormalColor>&	vertexData, 
+			std::vector<uint32_t>& indexData, 
+			const Vector3& color = { 0.25f, 0.25f, 0.25f }) const;
+		
+		void Translate(const Vector3& vector);
 
 		static Polygon3D ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon);
 		static Polygon3D ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace);
 	};
 
-	struct ConvexHullVertex : DirectX::SimpleMath::Vector3
+	struct ConvexHullVertex : public Vector3
 	{
-		bool processed;
+	public:
+		bool						Processed;
 
-		ConvexHullVertex() : DirectX::SimpleMath::Vector3(), processed(false) {}
-		ConvexHullVertex(float ix, float iy, float iz) : DirectX::SimpleMath::Vector3(ix, iy, iz), processed(false) {}
+		ConvexHullVertex() : Vector3(), Processed(false) {}
+		ConvexHullVertex(float ix, float iy, float iz) : Vector3(ix, iy, iz), Processed(false) {}
 		ConvexHullVertex(const XMFLOAT3& f3) : ConvexHullVertex(f3.x, f3.y, f3.z) {}
-		ConvexHullVertex(const DirectX::SimpleMath::Vector3& vec) : DirectX::SimpleMath::Vector3(vec), processed(false) {}
+		ConvexHullVertex(const Vector3& v3) : Vector3(v3), Processed(false) {}
 	};
 
 	struct ConvexHullFace
 	{
-		bool visible;
-		ConvexHullVertex vertices[3];
+	public:
+		bool						Visible;
+		ConvexHullVertex			Vertices[3];
 
 		ConvexHullFace(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3);
 
@@ -53,10 +74,11 @@ namespace VMACH
 
 	struct ConvexHullEdge
 	{
-		bool remove;
-		ConvexHullFace* face1;
-		ConvexHullFace* face2;
-		ConvexHullVertex endPoints[2];
+	public:
+		bool						Remove;
+		ConvexHullFace*				Face1;
+		ConvexHullFace*				Face2;
+		ConvexHullVertex			EndPoints[2];
 
 		ConvexHullEdge(const ConvexHullVertex& p1, const ConvexHullVertex& p2);
 
@@ -78,6 +100,11 @@ namespace VMACH
 		bool Contains(const ConvexHullVertex& point) const;
 		const std::list<ConvexHullFace> GetFaces() const;
 		const std::list<ConvexHullEdge> GetEdges() const;
+
+		void Render(
+			std::vector<VertexNormalColor>& vertexData, 
+			std::vector<uint32_t>& indexData, 
+			DirectX::SimpleMath::Vector3 color = { 0.25f, 0.25f, 0.25f }) const;
 
 		static bool Colinear(const ConvexHullVertex& p1, const ConvexHullVertex& p2, const ConvexHullVertex& p3);
 		static float Volume(const ConvexHullFace& face, const ConvexHullVertex& point);

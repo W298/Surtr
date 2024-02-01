@@ -1,11 +1,15 @@
 #include "pch.h"
 #include "Surtr.h"
 
+#include "voro++.hh"
+
 extern void ExitGame() noexcept;
 
 using namespace DirectX;
 using namespace SimpleMath;
 using Microsoft::WRL::ComPtr;
+
+const auto rnd = []() { return double(rand()) / RAND_MAX; };
 
 Surtr::Surtr() noexcept :
     m_window(nullptr),
@@ -46,8 +50,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
 
 	m_renderShadow = true;
     m_lightRotation = false;
-    m_wireframe = true;
-    m_bbRenderSolid = true;
     
     m_executeNextStep = false;
     m_ichIncludePointLimit = 20;
@@ -228,7 +230,7 @@ void Surtr::UpdateMesh()
 		DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 		DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
-		auto achVertexData = std::vector<VertexNormalTex>();
+		auto achVertexData = std::vector<VertexNormalColor>();
 		auto achIndexData = std::vector<uint32_t>();
 
         m_ichIncludePointLimit += 10;
@@ -324,7 +326,7 @@ void Surtr::Render()
 			
             for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (TRUE == m_meshVec[i]->RenderSolid)
+				if (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
         }
@@ -391,28 +393,18 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-                if (i == 2)
-                {
-                    if (TRUE == m_bbRenderSolid)
-                        m_meshVec[i]->Render(m_commandList.Get());
-                }
-                else
-                {
-                    if (TRUE == m_meshVec[i]->RenderSolid)
-                        m_meshVec[i]->Render(m_commandList.Get());
-                }
+				if (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
+					m_meshVec[i]->Render(m_commandList.Get());
 			}
 
 			m_commandList->SetPipelineState(m_wireframePSO.Get());
 
-            if (TRUE == m_wireframe)
-            {
-                for (int i = 0; i < m_meshVec.size(); i++)
-                {
+			for (int i = 0; i < m_meshVec.size(); i++)
+			{
+				if (Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption)
                     m_meshVec[i]->Render(m_commandList.Get());
-                }
-            }
-			
+			}
+
             // Draw imgui.
             {
                 ImGui_ImplDX12_NewFrame();
@@ -435,22 +427,49 @@ void Surtr::Render()
 
                     ImGui::Text("ICH Face Count: %d", m_ichFaceCnt);
                     ImGui::Text("ICH Included Points: %d (%f%% of total)", m_ichIncludePointLimit, m_ichIncludePointLimit * 100.0f / (m_meshVec[0]->VertexCount));
-                    if (ImGui::Button("+10")) 
+                    if (ImGui::Button("+10 Limit (Regenerate)")) 
                     {
                         m_executeNextStep = true;
                     }
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-                    ImGui::SliderFloat("Rotate speed", &m_camRotateSpeed, 0.0f, 1.0f);
+                    ImGui::Text("Rotate speed");
+                    ImGui::SliderFloat("_", &m_camRotateSpeed, 0.0f, 1.0f);
                     ImGui::Text("Move speed: %.3f (Scroll to Adjust)", m_camMoveSpeed);
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
                     ImGui::Checkbox("Rotate Light", &m_lightRotation);
                     ImGui::Checkbox("Render Shadow", &m_renderShadow);
-                    ImGui::Checkbox("Wireframe", &m_wireframe);
-                    ImGui::Checkbox("BB Render Solid", &m_bbRenderSolid);
+
+                    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+					ImGui::Text("Object Render Mode");
+					if (ImGui::Button("NOT_RENDER"))
+						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::NOT_RENDER;
+					ImGui::SameLine();
+					if (ImGui::Button("SOLID"))
+						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::SOLID;
+					ImGui::SameLine();
+					if (ImGui::Button("WIREFRAME"))
+						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::WIREFRAME;
+					ImGui::SameLine();
+					if (ImGui::Button("BOTH"))
+						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::SOLID | Mesh::RenderOptionType::WIREFRAME;
+
+                    ImGui::Text("Convex Render Mode");
+					if (ImGui::Button("_NOT_RENDER"))
+						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::NOT_RENDER;
+					ImGui::SameLine();
+					if (ImGui::Button("_SOLID"))
+						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::SOLID;
+					ImGui::SameLine();
+					if (ImGui::Button("_WIREFRAME"))
+						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::WIREFRAME;
+					ImGui::SameLine();
+					if (ImGui::Button("_BOTH"))
+						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::SOLID | Mesh::RenderOptionType::WIREFRAME;
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -798,7 +817,7 @@ void Surtr::CreateDeviceDependentResources()
         {
             { "POSITION",   0,  DXGI_FORMAT_R32G32B32_FLOAT,    0,  0,  D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
             { "NORMAL",     0,  DXGI_FORMAT_R32G32B32_FLOAT,    0,  12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-            { "TEXCOORD",   0,  DXGI_FORMAT_R32G32_FLOAT,       0,  24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+            { "COLOR",      0,  DXGI_FORMAT_R32G32B32_FLOAT,    0,  24, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
         };
 
         // Load compiled shaders.
@@ -1144,14 +1163,14 @@ void Surtr::CreateCommandListDependentResources()
     // #02. Load model vertices and indices.
     // ================================================================================================================
 	
-    std::vector<VertexNormalTex> objectVertexData;
+    std::vector<VertexNormalColor> objectVertexData;
     std::vector<uint32_t> objectIndexData;
     LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
     
     Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
     m_meshVec.push_back(objectModel);
 
-	std::vector<VertexNormalTex> groundVertexData;
+	std::vector<VertexNormalColor> groundVertexData;
 	std::vector<uint32_t> groundIndexData;
     LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
     
@@ -1162,7 +1181,7 @@ void Surtr::CreateCommandListDependentResources()
 	// #03. Create Approximate Convex Hull with VMACH (Volume Maximize Approximate Convex Hull) method.
 	// ================================================================================================================
 
-	std::vector<VertexNormalTex> convexHullVertexData;
+	std::vector<VertexNormalColor> convexHullVertexData;
 	std::vector<uint32_t> convexHullIndexData;
 	CreateACH(objectVertexData, m_ichIncludePointLimit, convexHullVertexData, convexHullIndexData);
 
@@ -1182,7 +1201,7 @@ void Surtr::CreateCommandListDependentResources()
     WaitForGpu();
 
     TestACHCreation(objectVertexData, m_ichIncludePointLimit);
-    TestECHCreation(objectVertexData);
+    // TestECHCreation(objectVertexData);
 
     // Release no longer needed upload heaps.
     for (int i = 0; i < 4; i++)
@@ -1336,42 +1355,27 @@ void Surtr::OnDeviceLost()
 }
 
 void Surtr::CreateACH(
-    _In_ const std::vector<VertexNormalTex>& visualMeshVertices, 
+    _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
     _In_ const int ichIncludePointLimit,
-    _Out_ std::vector<VertexNormalTex>& achVertexData, 
+    _Out_ std::vector<VertexNormalColor>& achVertexData, 
     _Out_ std::vector<uint32_t>& achIndexData)
 {
-    achVertexData = std::vector<VertexNormalTex>();
+    achVertexData = std::vector<VertexNormalColor>();
     achIndexData = std::vector<uint32_t>();
 
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
-    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.position; });
 
     VMACH::ConvexHull ich(vertices, ichIncludePointLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
-
-	/*{
-		int cnt = 0;
-		for (const VMACH::ConvexHullFace& f : ichFaceList)
-		{
-			achVertexData.push_back(VertexNormalTex(f.vertices[0]));
-			achVertexData.push_back(VertexNormalTex(f.vertices[1]));
-			achVertexData.push_back(VertexNormalTex(f.vertices[2]));
-
-			achIndexData.push_back(cnt++);
-			achIndexData.push_back(cnt++);
-			achIndexData.push_back(cnt++);
-		}
-	}
-
-	return;*/
+    // ich.Render(achVertexData, achIndexData);
 
     // 2. Collect ICH face normals.
     std::vector<Vector3> ichFaceNormalVec;
     for (const VMACH::ConvexHullFace& f : ichFaceList)
     {
-        Vector3 normal = (f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]);
+        Vector3 normal = (f.Vertices[1] - f.Vertices[0]).Cross(f.Vertices[2] - f.Vertices[0]);
         normal.Normalize();
         ichFaceNormalVec.push_back(normal);
     }
@@ -1379,12 +1383,19 @@ void Surtr::CreateACH(
     m_ichFaceCnt = ichFaceNormalVec.size();
 
     // 3. Calculate bounding box.
-	double maxX = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; })).x;
-    double maxY = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; })).y;
-    double maxZ = (*std::max_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; })).z;
-    double minX = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; })).x;
-    double minY = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; })).y;
-    double minZ = (*std::min_element(vertices.begin(), vertices.end(), [](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; })).z;
+    double minX, maxX, minY, maxY, minZ, maxZ;
+    {
+		const auto x = std::minmax_element(vertices.begin(), vertices.end(),
+			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; });
+		const auto y = std::minmax_element(vertices.begin(), vertices.end(),
+			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; });
+		const auto z = std::minmax_element(vertices.begin(), vertices.end(),
+			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; });
+
+		minX = (*x.first).x;    maxX = (*x.second).x;
+        minY = (*y.first).y;    maxY = (*y.second).y;
+        minZ = (*z.first).z;    maxZ = (*z.second).z;
+    }
 
 	Vector3 bbCenter((maxX + minX) / 2.0, (maxY + minY) / 2.0, (maxZ + minZ) / 2.0);
     double maxAxisScale = std::max(std::max(maxX - minX, maxY - minY), maxZ - minZ);
@@ -1423,41 +1434,41 @@ void Surtr::CreateACH(
 
     // 5. Init bounding box polygon.
     VMACH::Polygon3D bbPolygon;
-	bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+	bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
 		Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
 		}));
-    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
 		Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
         }));
-    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
 		Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
         }));
-    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
 		Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
         }));
-    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
 		Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
         }));
-    bbPolygon.faceVec.push_back(VMACH::PolygonFace({
+    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
 		Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
 		Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
         }));
 
-	for (int f = 0; f < bbPolygon.faceVec.size(); f++)
+	for (int f = 0; f < bbPolygon.FaceVec.size(); f++)
 	{
-		for (int v = 0; v < bbPolygon.faceVec[f].vertexVec.size(); v++)
+		for (int v = 0; v < bbPolygon.FaceVec[f].VertexVec.size(); v++)
 		{
-			bbPolygon.faceVec[f].vertexVec[v] *= Vector3((maxX - minX), (maxY - minY), (maxZ - minZ));
-            bbPolygon.faceVec[f].vertexVec[v] *= 1.5;  // #CORRECTION
-			bbPolygon.faceVec[f].vertexVec[v] += bbCenter;
+			bbPolygon.FaceVec[f].VertexVec[v] *= Vector3((maxX - minX), (maxY - minY), (maxZ - minZ));
+            bbPolygon.FaceVec[f].VertexVec[v] *= 2.0;                   // #CORRECTION
+			bbPolygon.FaceVec[f].VertexVec[v] += bbCenter;
 		}
 
-        bbPolygon.faceVec[f].Rewind();
+        bbPolygon.FaceVec[f].Rewind();
 	}
 
     // 6. Collect polygon face using ICH face planes.
@@ -1488,85 +1499,121 @@ void Surtr::CreateACH(
     VMACH::Polygon3D clippingPolygon;
     for (int f = 0; f < ichFaceNormalVec.size(); f++)
     {
-        clippingPolygon.faceVec.push_back(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
-        clippingPolygon.faceVec.push_back(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
+        clippingPolygon.FaceVec.push_back(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
+        clippingPolygon.FaceVec.push_back(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
     }
-    
-	/*VMACH::Polygon3D inner;
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
-		Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
-		}));
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
-		Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
-		}));
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
-		Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
-		}));
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
-		Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
-		}));
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
-		Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
-		}));
-	inner.faceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
-		Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
-		}));
-
-	for (int f = 0; f < inner.faceVec.size(); f++)
-	{
-		for (int v = 0; v < inner.faceVec[f].vertexVec.size(); v++)
-		{
-			inner.faceVec[f].vertexVec[v] *= 0.5;
-			inner.faceVec[f].vertexVec[v] += bbCenter;
-            inner.faceVec[f].vertexVec[v].y += 1.25;
-		}
-
-		inner.faceVec[f].Rewind();
-	}
-
-    VMACH::Polygon3D poly = bbPolygon.ClipPolygon(inner);
-    */
 
     // 7. Clip bounding box polygon with clipping faces.
 	VMACH::Polygon3D poly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
+    // poly.Render(achVertexData, achIndexData);
 
-    // Visualize (Triangularization).
-    {
-        int cnt = 0;
-		for (int f = 0; f < poly.faceVec.size(); f++)
+    // 8. Voronoi diagram generation.
+	voro::container con(minX, maxX, minY, maxY, minZ, maxZ, 2, 2, 2, false, false, false, 8);
+
+	int i = 0;
+	double x, y, z;
+	while (i < 24)
+	{
+		x = minX + rnd() * (maxX - minX);
+		y = minY + rnd() * (maxY - minY);
+		z = minZ + rnd() * (maxZ - minZ);
+		if (con.point_inside(x, y, z))
 		{
-            Vector3 anchor = poly.faceVec[f].vertexVec[0];
-			for (int v = 1; v < poly.faceVec[f].vertexVec.size() - 1; v++)
-			{
-                Vector3 a = poly.faceVec[f].vertexVec[v];
-                Vector3 b = poly.faceVec[f].vertexVec[v + 1];
-
-                achVertexData.push_back(VertexNormalTex(anchor));
-                achVertexData.push_back(VertexNormalTex(a));
-                achVertexData.push_back(VertexNormalTex(b));
-
-                achIndexData.push_back(cnt++);
-                achIndexData.push_back(cnt++);
-                achIndexData.push_back(cnt++);
-			}
+			con.put(i, x, y, z);
+			i++;
 		}
+	}
+
+    std::vector<VMACH::Polygon3D> voroPolyVec;
+
+	int id;
+	voro::voronoicell_neighbor voroCell;
+	std::vector<int> neighborVec;
+
+	voro::c_loop_all cl(con);
+	int dimension = 0;
+	if (cl.start()) do if (con.compute_cell(voroCell, cl)) 
+    {
+		dimension += 1;
+	} while (cl.inc());
+
+	int counter = 0;
+	if (cl.start()) do if (con.compute_cell(voroCell, cl)) 
+    {
+		cl.pos(x, y, z);
+        id = cl.pid();
+
+		std::vector<int> cellFaceVec;
+		std::vector<double> cellVertices;
+
+		voroCell.neighbors(neighborVec);
+		voroCell.face_vertices(cellFaceVec);
+		voroCell.vertices(x, y, z, cellVertices);
+
+        VMACH::Polygon3D voroPoly;
+
+        int cur = 0;
+        while (cur < cellFaceVec.size())
+        {
+            VMACH::PolygonFace face;
+            
+            int cnt = cellFaceVec[cur];
+            for (int i = 0; i < cnt; i++)
+            {
+                int vertIndex = cellFaceVec[cur + i + 1];
+                face.AddVertex(Vector3(
+                    cellVertices[3 * vertIndex], 
+                    cellVertices[3 * vertIndex + 1], 
+                    cellVertices[3 * vertIndex + 2]));
+            }
+            cur += cnt + 1;
+
+            face.Rewind();
+            voroPoly.FaceVec.push_back(face);
+        }
+
+        voroPolyVec.push_back(voroPoly);
+
+		counter += 1;
+	} while (cl.inc());
+
+	// Render voro poly.
+	/*for (int i = 0; i < voroPolyVec.size(); i++)
+	{
+		double a, b, c;
+		a = rnd(); b = rnd(); c = rnd();
+		XMFLOAT3 color(a, b, c);
+
+		voroPolyVec[i].Render(achVertexData, achIndexData, color);
+	}*/
+
+    // Render clipped convex.
+    for (int i = 0; i < voroPolyVec.size(); i++)
+    {
+		double a, b, c;
+		a = rnd(); b = rnd(); c = rnd();
+		XMFLOAT3 color(a, b, c);
+
+        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipPolygon(poly, voroPolyVec[i]);
+
+		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
+		outer.Normalize();
+		outer *= 4;
+
+        clippedPoly.Translate(outer);
+        clippedPoly.Render(achVertexData, achIndexData, color);
     }
 
+    // Calculate ACH volume.
 	{
 		double vol = 0;
-		for (int f = 0; f < poly.faceVec.size(); f++)
+		for (int f = 0; f < poly.FaceVec.size(); f++)
 		{
-			Vector3 anchor = poly.faceVec[f].vertexVec[0];
-			for (int v = 1; v < poly.faceVec[f].vertexVec.size() - 1; v++)
+			Vector3 anchor = poly.FaceVec[f].VertexVec[0];
+			for (int v = 1; v < poly.FaceVec[f].VertexVec.size() - 1; v++)
 			{
-				Vector3 a = poly.faceVec[f].vertexVec[v];
-				Vector3 b = poly.faceVec[f].vertexVec[v + 1];
+				Vector3 a = poly.FaceVec[f].VertexVec[v];
+				Vector3 b = poly.FaceVec[f].VertexVec[v + 1];
 
                 VMACH::ConvexHullFace chf(anchor, a, b);
                 vol += VMACH::ConvexHull::Volume(chf, VMACH::ConvexHullVertex(0, 5, 0));
@@ -1577,14 +1624,14 @@ void Surtr::CreateACH(
 	}
 }
 
-void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices, _In_ const int intermediateConvexHullLimit)
+void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices, _In_ const int intermediateConvexHullLimit)
 {
 	TIMER_INIT;
 	TIMER_START;
 
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
-    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+    std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.position; });
 
     VMACH::ConvexHull ich(vertices, intermediateConvexHullLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
@@ -1593,7 +1640,7 @@ void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshV
     std::vector<Vector3> ichFaceNormalVec;
     for (const VMACH::ConvexHullFace& f : ichFaceList)
     {
-        Vector3 normal = (f.vertices[1] - f.vertices[0]).Cross(f.vertices[2] - f.vertices[0]);
+        Vector3 normal = (f.Vertices[1] - f.Vertices[0]).Cross(f.Vertices[2] - f.Vertices[0]);
         normal.Normalize();
         ichFaceNormalVec.push_back(normal);
     }
@@ -1640,13 +1687,13 @@ void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshV
 	}
 }
 
-void Surtr::TestECHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices)
+void Surtr::TestECHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices)
 {
 	TIMER_INIT;
 	TIMER_START;
 
 	std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
-	std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalTex& vertex) { return vertex.position; });
+	std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.position; });
 
 	VMACH::ConvexHull ch(vertices, 0);
 
@@ -1719,7 +1766,7 @@ void Surtr::LoadModelData(
     _In_ const std::string fileName, 
     _In_ DirectX::XMFLOAT3 scale, 
     _In_ DirectX::XMFLOAT3 translate, 
-    _Out_ std::vector<VertexNormalTex>& vertices, 
+    _Out_ std::vector<VertexNormalColor>& vertices, 
     _Out_ std::vector<uint32_t>& indices)
 {
 	Assimp::Importer importer;
@@ -1731,7 +1778,7 @@ void Surtr::LoadModelData(
 	if (scene == nullptr)
 		throw std::exception();
 
-    vertices = std::vector<VertexNormalTex>();
+    vertices = std::vector<VertexNormalColor>();
     indices = std::vector<uint32_t>();
 
 	for (int i = 0; i < scene->mMeshes[0]->mNumVertices; i++)
@@ -1744,14 +1791,10 @@ void Surtr::LoadModelData(
 		if (scene->mMeshes[0]->mNormals != nullptr)
 			n = scene->mMeshes[0]->mNormals[i];
 
-		if (scene->mMeshes[0]->mTextureCoords[0] != nullptr)
-			t = scene->mMeshes[0]->mTextureCoords[0][i];
-
 		vertices.push_back(
-			VertexNormalTex(
+			VertexNormalColor(
 				XMFLOAT3(-v.x * scale.x + translate.x, v.y * scale.y + translate.y, v.z * scale.z + translate.z),
-				XMFLOAT3(-n.x, n.y, n.z),
-				XMFLOAT2(t.x, t.y)));
+				XMFLOAT3(-n.x, n.y, n.z)));
 	}
 
 	for (int i = 0; i < scene->mMeshes[0]->mNumFaces; i++)
@@ -1763,7 +1806,7 @@ void Surtr::LoadModelData(
 	}
 }
 
-Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalTex>& vertices, _In_ const std::vector<uint32_t>& indices)
+Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
     Mesh* mesh = new Mesh();
 
@@ -1771,7 +1814,7 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalTex>& vertic
     mesh->IndexData = indices;
     mesh->VertexCount = vertices.size();
     mesh->IndexCount = indices.size();
-	mesh->VBSize = sizeof(VertexNormalTex) * mesh->VertexCount;
+	mesh->VBSize = sizeof(VertexNormalColor) * mesh->VertexCount;
 	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
 
     // Prepare vertex buffer.
@@ -1790,7 +1833,7 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalTex>& vertic
 
 		// Initialize vertex buffer view.
 		mesh->VBV.BufferLocation = mesh->VB->GetGPUVirtualAddress();
-        mesh->VBV.StrideInBytes = sizeof(VertexNormalTex);
+        mesh->VBV.StrideInBytes = sizeof(VertexNormalColor);
         mesh->VBV.SizeInBytes = mesh->VBSize;
 
 		// Create upload heap.
@@ -1871,11 +1914,11 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalTex>& vertic
     return mesh;
 }
 
-void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalTex>& vertices, _In_ const std::vector<uint32_t>& indices)
+void Surtr::UpdateMeshData(Mesh* mesh, _In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
 	mesh->VertexCount = vertices.size();
 	mesh->IndexCount = indices.size();
-	mesh->VBSize = sizeof(VertexNormalTex) * mesh->VertexCount;
+	mesh->VBSize = sizeof(VertexNormalColor) * mesh->VertexCount;
 	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
 
     {

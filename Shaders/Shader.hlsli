@@ -24,14 +24,14 @@ struct VS_INPUT
 {
     float3 position : POSITION;
     float3 normal : NORMAL;
-    float2 texCoord : TEXCOORD;
+    float3 color : COLOR;
 };
 
 struct VS_OUTPUT
 {
     float4 position : SV_Position;
     float3 normal : NORMAL;
-    float2 texCoord : TEXCOORD;
+    float3 color : COLOR;
     float3 catPos : POSITION;
 };
 
@@ -62,7 +62,7 @@ VS_OUTPUT VS(VS_INPUT input)
     output.position = mul(output.position, cb.viewProjMatrix);
     
     output.normal = input.normal;
-    output.texCoord = input.texCoord;
+    output.color = input.color;
     output.catPos = input.position;
 
     return output;
@@ -103,7 +103,7 @@ PS_OUTPUT PS(VS_OUTPUT input)
 {
     PS_OUTPUT output;
 
-    float3 texColor = float3(0.25f, 0.25f, 0.25f);
+    float3 texColor = input.color;
     float3 normal = input.normal;
     
     float3 diffuse = saturate(dot(normal, -cb.lightDirection.xyz)) * cb.lightColor.xyz;

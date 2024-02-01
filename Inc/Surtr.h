@@ -74,16 +74,16 @@ private:
 
     // Core feature functions
     void CreateACH(
-        _In_ const std::vector<VertexNormalTex>& visualMeshVertices,
+        _In_ const std::vector<VertexNormalColor>& visualMeshVertices,
         _In_ const int ichIncludePointLimit,
-        _Out_ std::vector<VertexNormalTex>& achVertexData, 
+        _Out_ std::vector<VertexNormalColor>& achVertexData, 
         _Out_ std::vector<uint32_t>& achIndexData);
 
 	void TestACHCreation(
-		_In_ const std::vector<VertexNormalTex>& visualMeshVertices,
+		_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
 		_In_ const int intermediateConvexHullLimit);
 
-    void TestECHCreation(_In_ const std::vector<VertexNormalTex>& visualMeshVertices);
+    void TestECHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
 
     // Helper functions
     void CreateTextureResource(
@@ -96,16 +96,16 @@ private:
         _In_ const std::string fileName, 
         _In_ DirectX::XMFLOAT3 scale,
         _In_ DirectX::XMFLOAT3 translate,
-        _Out_ std::vector<VertexNormalTex>& vertices, 
+        _Out_ std::vector<VertexNormalColor>& vertices, 
         _Out_ std::vector<uint32_t>& indices);
     
     Mesh* PrepareMeshResource(
-        _In_ const std::vector<VertexNormalTex>& vertices, 
+        _In_ const std::vector<VertexNormalColor>& vertices, 
         _In_ const std::vector<uint32_t>& indices);
 
     void UpdateMeshData(
         Mesh* mesh, 
-        _In_ const std::vector<VertexNormalTex>& vertices, 
+        _In_ const std::vector<VertexNormalColor>& vertices, 
         _In_ const std::vector<uint32_t>& indices);
 
     // Constants
@@ -207,8 +207,6 @@ private:
     // Rendering options
     bool												m_renderShadow;
     bool												m_lightRotation;
-    bool                                                m_wireframe;
-    bool                                                m_bbRenderSolid;
     
     // Feature parameters
     bool                                                m_executeNextStep;

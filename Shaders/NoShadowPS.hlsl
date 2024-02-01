@@ -24,7 +24,7 @@ struct VS_OUTPUT
 {
     float4 position : SV_Position;
     float3 normal : NORMAL;
-    float2 texCoord : TEXCOORD;
+    float3 color : COLOR;
 };
 
 struct PS_OUTPUT
@@ -43,14 +43,8 @@ PS_OUTPUT PS(VS_OUTPUT input)
 {
     PS_OUTPUT output;
 
-    float3 texColor = float3(0.25f, 0.25f, 0.25f);
-    float3 normal = input.normal;
-    
-    float3 diffuse = saturate(dot(normal, -cb.lightDirection.xyz)) * cb.lightColor.xyz;
-    float3 ambient = float3(0.08f, 0.08f, 0.08f) * cb.lightColor.xyz;
-
-    float4 final = float4(
-		saturate((diffuse + ambient)) * texColor.rgb, 1);
+    float3 texColor = input.color;
+    float4 final = float4(texColor.rgb, 1);
 
     output.color = final;
 
