@@ -1368,76 +1368,41 @@ void Surtr::CreateACH(
     // Test 3D Voronoi Generation.
     {
 		std::vector<Vector3> points;
-		for (int i = 0; i < 20; i++)
-		{
-			float x = rnd() * 2 - 1;
-			float y = rnd() * 2 - 1;
-            float z = rnd() * 2 - 1;
-			points.emplace_back(x, y, z);
-		}
-
-        const auto dt = DT3D::triangulate(points);
-		for (int i = 0; i < dt.faces.size(); i++)
-		{
-			achVertexData.push_back(VertexNormalColor(dt.faces[i].p0));
-			achVertexData.push_back(VertexNormalColor(dt.faces[i].p1));
-			achVertexData.push_back(VertexNormalColor(dt.faces[i].p2));
-
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-		}
-
-		/*std::vector<DT3D::Edge> edges;
-
-		for (int i = 0; i < dt.tetrahedrons.size(); i++)
-		{
-			for (int j = 0; j < dt.tetrahedrons.size(); j++)
-			{
-				if (i == j)
-					continue;
-
-				if (
-					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t0) ||
-					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t1) ||
-					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t2) ||
-					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t0) ||
-					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t1) ||
-					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t2) ||
-					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t0) ||
-					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t1) ||
-					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t2))
-				{
-                    if ((dt.tetrahedrons[i].sphere.center - dt.tetrahedrons[j].sphere.center).Length() > std::sqrt(3))
-                        continue;
-
-					edges.emplace_back(
-						dt.tetrahedrons[i].sphere.center,
-						dt.tetrahedrons[j].sphere.center);
-				}
-			}
-		}
-
-        for (int i = 0; i < dt.tetrahedrons.size(); i++)
+        int pCount = 0;
+        while (pCount < 50)
         {
-			Vector3 v0(dt.tetrahedrons[i].sphere.center);
-            Vector3 v1 = v0 + Vector3(0.05f, 0, 0);
-            Vector3 v2 = v1 + Vector3(0, 0, 0.05f);
+			float x = rnd() * 5;
+			float y = rnd() * 5;
+			float z = rnd() * 5;
 
-			achVertexData.push_back(VertexNormalColor(v0));
-			achVertexData.push_back(VertexNormalColor(v1));
-			achVertexData.push_back(VertexNormalColor(v2));
+			Vector3 p(x, y, z);
 
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
+            if (points.end() == std::find_if(points.begin(), points.end(), [&](const Vector3& pp) { return (p - pp).Length() < 1; }))
+            {
+                points.emplace_back(x, y, z);
+                pCount++;
+            }
         }
 
-		for (int i = 0; i < edges.size(); i++)
+        const auto dt = DT3D::Triangulate(points);
+        /*for (int i = 0; i < dt.faces.size(); i++)
+        {
+            achVertexData.push_back(VertexNormalColor(dt.faces[i].p0));
+            achVertexData.push_back(VertexNormalColor(dt.faces[i].p1));
+            achVertexData.push_back(VertexNormalColor(dt.faces[i].p2));
+
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+        }*/
+
+        const std::vector<DT3D::Edge> voronoiEdgeVec = DT3D::Voronoi(dt);
+
+		for (int i = 0; i < dt.TetVec.size(); i++)
 		{
-			Vector3 v0(edges[i].p0);
-			Vector3 v1(edges[i].p1);
-			Vector3 v2(edges[i].p1.x + 0.001f, edges[i].p1.y, edges[i].p1.z);
+			Vector3 v0(dt.TetVec[i].sphere.center);
+			Vector3 v1 = v0 + Vector3(0.01f, 0, 0);
+			Vector3 v2 = v1 + Vector3(0, 0, 0.01f);
 
 			achVertexData.push_back(VertexNormalColor(v0));
 			achVertexData.push_back(VertexNormalColor(v1));
@@ -1446,8 +1411,25 @@ void Surtr::CreateACH(
 			achIndexData.push_back(achIndexData.size());
 			achIndexData.push_back(achIndexData.size());
 			achIndexData.push_back(achIndexData.size());
-		}*/
+		}
+
+		for (int i = 0; i < voronoiEdgeVec.size(); i++)
+		{
+			Vector3 v0(voronoiEdgeVec[i].p0);
+			Vector3 v1(voronoiEdgeVec[i].p1);
+			Vector3 v2(voronoiEdgeVec[i].p1.x + 0.001f, voronoiEdgeVec[i].p1.y, voronoiEdgeVec[i].p1.z);
+
+			achVertexData.push_back(VertexNormalColor(v0));
+			achVertexData.push_back(VertexNormalColor(v1));
+			achVertexData.push_back(VertexNormalColor(v2));
+
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+		}
     }
+
+    return;
 
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());

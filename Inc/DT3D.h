@@ -2,16 +2,99 @@
 
 namespace DT3D
 {
-	constexpr double eps = 1e-4;
 	using DirectX::SimpleMath::Vector3;
 	using DirectX::SimpleMath::Matrix;
+
+	void tetrahedron_circumcenter(
+		// In:
+		const double a[3],
+		const double b[3],
+		const double c[3],
+		const double d[3],
+		// Out:
+		double circumcenter[3],
+		double* xi,
+		double* eta,
+		double* zeta)
+	{
+		double denominator;
+
+
+		// Use coordinates relative to point 'a' of the tetrahedron.
+
+		// ba = b - a
+		double ba_x = b[0] - a[0];
+		double ba_y = b[1] - a[1];
+		double ba_z = b[2] - a[2];
+
+		// ca = c - a
+		double ca_x = c[0] - a[0];
+		double ca_y = c[1] - a[1];
+		double ca_z = c[2] - a[2];
+
+		// da = d - a
+		double da_x = d[0] - a[0];
+		double da_y = d[1] - a[1];
+		double da_z = d[2] - a[2];
+
+		// Squares of lengths of the edges incident to 'a'.
+		double len_ba = ba_x * ba_x + ba_y * ba_y + ba_z * ba_z;
+		double len_ca = ca_x * ca_x + ca_y * ca_y + ca_z * ca_z;
+		double len_da = da_x * da_x + da_y * da_y + da_z * da_z;
+
+		// Cross products of these edges.
+
+		// c cross d
+		double cross_cd_x = ca_y * da_z - da_y * ca_z;
+		double cross_cd_y = ca_z * da_x - da_z * ca_x;
+		double cross_cd_z = ca_x * da_y - da_x * ca_y;
+
+		// d cross b
+		double cross_db_x = da_y * ba_z - ba_y * da_z;
+		double cross_db_y = da_z * ba_x - ba_z * da_x;
+		double cross_db_z = da_x * ba_y - ba_x * da_y;
+
+		// b cross c
+		double cross_bc_x = ba_y * ca_z - ca_y * ba_z;
+		double cross_bc_y = ba_z * ca_x - ca_z * ba_x;
+		double cross_bc_z = ba_x * ca_y - ca_x * ba_y;
+
+		// Calculate the denominator of the formula.
+		denominator = 0.5 / (ba_x * cross_cd_x + ba_y * cross_cd_y + ba_z * cross_cd_z);
+
+		// Calculate offset (from 'a') of circumcenter.
+		double circ_x = (len_ba * cross_cd_x + len_ca * cross_db_x + len_da * cross_bc_x) * denominator;
+		double circ_y = (len_ba * cross_cd_y + len_ca * cross_db_y + len_da * cross_bc_y) * denominator;
+		double circ_z = (len_ba * cross_cd_z + len_ca * cross_db_z + len_da * cross_bc_z) * denominator;
+
+		circumcenter[0] = circ_x;
+		circumcenter[1] = circ_y;
+		circumcenter[2] = circ_z;
+
+		if (xi != (double*) nullptr) {
+			// To interpolate a linear function at the circumcenter, define a
+			// coordinate system with a xi-axis directed from 'a' to 'b',
+			// an eta-axis directed from 'a' to 'c', and a zeta-axis directed
+			// from 'a' to 'd'.  The values for xi, eta, and zeta are computed
+			// by Cramer's Rule for solving systems of linear equations.
+			denominator *= 2.0;
+			*xi = (circ_x * cross_cd_x + circ_y * cross_cd_y + circ_z * cross_cd_z) * denominator;
+			*eta = (circ_x * cross_db_x + circ_y * cross_db_y + circ_z * cross_db_z) * denominator;
+			*zeta = (circ_x * cross_bc_x + circ_y * cross_bc_y + circ_z * cross_bc_z) * denominator;
+		}
+	}
+
+	struct Sphere
+	{
+		Vector3 center;
+		float radius;
+	};
 
 	struct Edge
 	{
 		Vector3 p0, p1;
 
-		Edge() = default;
-		Edge(const Vector3& _p0, const Vector3& _p1) : p0{ _p0 }, p1{ _p1 } {}
+		Edge(const Vector3& _p0, const Vector3& _p1) : p0(_p0), p1(_p1) {}
 
 		bool operator==(const Edge& other) const
 		{
@@ -19,22 +102,12 @@ namespace DT3D
 		}
 	};
 
-	struct Sphere
-	{
-		Vector3 center;
-		float radius;
-
-		Sphere() = default;
-	};
-
 	struct Triangle
 	{
 		Vector3 p0, p1, p2;
-		Edge e0, e1, e2;
 
 		Triangle() = default;
-		Triangle(const Vector3& _p0, const Vector3& _p1, const Vector3& _p2)
-			: p0{ _p0 }, p1{ _p1 }, p2{ _p2 }, e0{ _p0, _p1 }, e1{ _p1, _p2 }, e2{ _p0, _p2 } {}
+		Triangle(const Vector3& _p0, const Vector3& _p1, const Vector3& _p2) : p0(_p0), p1(_p1), p2(_p2) {}
 
 		bool operator==(const Triangle& o) const
 		{
@@ -51,7 +124,6 @@ namespace DT3D
 	struct Tetrahedron
 	{
 		Vector3 p0, p1, p2, p3;
-		Edge e0, e1, e2, e3, e4, e5;
 		Triangle t0, t1, t2, t3;
 		Sphere sphere;
 
@@ -62,89 +134,32 @@ namespace DT3D
 			t2 = Triangle(p1, p2, p3);
 			t3 = Triangle(p2, p0, p3);
 
-			double x1 = p0.x;
-			double x2 = p1.x;
-			double x3 = p2.x;
-			double x4 = p3.x;
+			const double a[] = { p0.x, p0.y, p0.z };
+			const double b[] = { p1.x, p1.y, p1.z };
+			const double c[] = { p2.x, p2.y, p2.z };
+			const double d[] = { p3.x, p3.y, p3.z };
 
-			double y1 = p0.y;
-			double y2 = p1.y;
-			double y3 = p2.y;
-			double y4 = p3.y;
+			double circumcenter[3];
 
-			double z1 = p0.z;
-			double z2 = p1.z;
-			double z3 = p2.z;
-			double z4 = p3.z;
+			tetrahedron_circumcenter(a, b, c, d, circumcenter, nullptr, nullptr, nullptr);
 
-			double xyz1 = x1 * x1 + y1 * y1 + z1 * z1;
-			double xyz2 = x2 * x2 + y2 * y2 + z2 * z2;
-			double xyz3 = x3 * x3 + y3 * y3 + z3 * z3;
-			double xyz4 = x4 * x4 + y4 * y4 + z4 * z4;
-
-			Matrix a
-			(
-				x1, y1, z1, 1,
-				x2, y2, z2, 1,
-				x3, y3, z3, 1,
-				x4, y4, z4, 1
-			);
-
-			Matrix dx
-			(
-				xyz1, y1, z1, 1,
-				xyz2, y2, z2, 1,
-				xyz3, y3, z3, 1,
-				xyz4, y4, z4, 1
-			);
-
-			Matrix dy
-			(
-				xyz1, x1, z1, 1,
-				xyz2, x2, z2, 1,
-				xyz3, x3, z3, 1,
-				xyz4, x4, z4, 1
-			);
-
-			Matrix dz
-			(
-				xyz1, x1, y1, 1,
-				xyz2, x2, y2, 1,
-				xyz3, x3, y3, 1,
-				xyz4, x4, y4, 1
-			);
-
-			Matrix c
-			(
-				xyz1, x1, y1, z1,
-				xyz2, x2, y2, z2,
-				xyz3, x3, y3, z3,
-				xyz4, x4, y4, z4
-			);
-
-			sphere.center = Vector3(
-				dx.Determinant() / (2 * a.Determinant()), 
-				dy.Determinant() / (2 * a.Determinant()), 
-				dz.Determinant() / (2 * a.Determinant()));
-
-			sphere.radius = 
-				std::sqrt(
-					std::pow(dx.Determinant(), 2) + 
-					std::pow(dy.Determinant(), 2) + 
-					std::pow(dz.Determinant(), 2) - 4 * a.Determinant() * c.Determinant()) / (2 * std::abs(a.Determinant()));
+			sphere.center = Vector3(a[0] + circumcenter[0], a[1] + circumcenter[1], a[2] + circumcenter[2]);
+			sphere.radius = Vector3::Distance(p0, sphere.center);
 		}
 	};
 
 	struct Delaunay
 	{
-		std::vector<Tetrahedron> tetrahedrons;
-		std::vector<Triangle> faces;
+		std::vector<Tetrahedron> TetVec;
+		std::vector<Triangle> FaceVec;
 	};
 
-	Delaunay triangulate(const std::vector<Vector3>& points)
+	Delaunay Triangulate(const std::vector<Vector3>& points)
 	{
 		if (points.size() < 3)
-			return Delaunay{};
+			return Delaunay();
+
+		Delaunay dt;
 
 		auto xmin = points[0].x;
 		auto xmax = xmin;
@@ -170,16 +185,13 @@ namespace DT3D
 		const auto midx = (xmin + xmax) / 2.0f;
 		const auto midy = (ymin + ymax) / 2.0f;
 		const auto midz = (zmin + zmax) / 2.0f;
-
-		/* Init Delaunay triangulation. */
-		auto d = Delaunay{};
-
+		
 		const auto p0 = Vector3{ midx - 20 * dmax,	midy - dmax,		midz - dmax };
 		const auto p1 = Vector3{ midx,				midy - dmax,		midz + 20 * dmax };
 		const auto p2 = Vector3{ midx + 20 * dmax,  midy - dmax,		midz - dmax };
 		const auto p3 = Vector3{ midx,				midy + 20 * dmax,	midz };
 
-		d.tetrahedrons.emplace_back(p0, p1, p2, p3);
+		dt.TetVec.emplace_back(p0, p1, p2, p3);
 
 		for (int i = 0; i < points.size(); i++)
 		{
@@ -187,11 +199,11 @@ namespace DT3D
 
 			std::vector<Triangle> faces;
 			std::vector<Tetrahedron> tmps;
-			for (auto const& tet : d.tetrahedrons)
+			for (auto const& tet : dt.TetVec)
 			{
-				/* Check if the point is inside the triangle circumcircle. */
+				/* Check if the point is inside the tetrahedron circumsphere. */
 				const auto dist = Vector3::Distance(tet.sphere.center, pt);
-				if ((dist - tet.sphere.radius) <= eps)
+				if ((dist - tet.sphere.radius) <= EPSILON)
 				{
 					faces.push_back(tet.t0);
 					faces.push_back(tet.t1);
@@ -227,27 +239,72 @@ namespace DT3D
 			for (auto const& f : faces)
 				tmps.emplace_back(f.p0, f.p1, f.p2, pt);
 
-			d.tetrahedrons = tmps;
+			dt.TetVec = tmps;
 		}
 
 		/* Remove original super triangle. */
-		d.tetrahedrons.erase(std::remove_if(d.tetrahedrons.begin(), d.tetrahedrons.end(),
+		dt.TetVec.erase(std::remove_if(dt.TetVec.begin(), dt.TetVec.end(),
 			[&](auto const& tet)
 			{
 				return ((tet.p0 == p0 || tet.p1 == p0 || tet.p2 == p0 || tet.p3 == p0) ||
 						(tet.p0 == p1 || tet.p1 == p1 || tet.p2 == p1 || tet.p3 == p1) ||
 						(tet.p0 == p2 || tet.p1 == p2 || tet.p2 == p2 || tet.p3 == p2) ||
 						(tet.p0 == p3 || tet.p1 == p3 || tet.p2 == p3 || tet.p3 == p3));
-			}), d.tetrahedrons.end());
+			}), dt.TetVec.end());
 
 		/* Add faces. */
-		for (auto const& tet : d.tetrahedrons)
+		for (auto const& tet : dt.TetVec)
 		{
-			d.faces.push_back(tet.t0);
-			d.faces.push_back(tet.t1);
-			d.faces.push_back(tet.t2);
+			dt.FaceVec.push_back(tet.t0);
+			dt.FaceVec.push_back(tet.t1);
+			dt.FaceVec.push_back(tet.t2);
 		}
 
-		return d;
+		return dt;
+	}
+
+	std::vector<Edge> Voronoi(const Delaunay& dt)
+	{
+		std::vector<Edge> edgeVec;
+
+		for (int i = 0; i < dt.TetVec.size(); i++)
+		{
+			int adjFaceCnt = 0;
+			for (int j = 0; j < dt.TetVec.size(); j++)
+			{
+				if (i == j)
+					continue;
+
+				if (
+					(dt.TetVec[i].t0 == dt.TetVec[j].t0) ||
+					(dt.TetVec[i].t0 == dt.TetVec[j].t1) ||
+					(dt.TetVec[i].t0 == dt.TetVec[j].t2) ||
+					(dt.TetVec[i].t0 == dt.TetVec[j].t3) ||
+					(dt.TetVec[i].t1 == dt.TetVec[j].t0) ||
+					(dt.TetVec[i].t1 == dt.TetVec[j].t1) ||
+					(dt.TetVec[i].t1 == dt.TetVec[j].t2) ||
+					(dt.TetVec[i].t1 == dt.TetVec[j].t3) ||
+					(dt.TetVec[i].t2 == dt.TetVec[j].t0) ||
+					(dt.TetVec[i].t2 == dt.TetVec[j].t1) ||
+					(dt.TetVec[i].t2 == dt.TetVec[j].t2) ||
+					(dt.TetVec[i].t2 == dt.TetVec[j].t3) ||
+					(dt.TetVec[i].t3 == dt.TetVec[j].t0) ||
+					(dt.TetVec[i].t3 == dt.TetVec[j].t1) ||
+					(dt.TetVec[i].t3 == dt.TetVec[j].t2) ||
+					(dt.TetVec[i].t3 == dt.TetVec[j].t3))
+				{
+					edgeVec.emplace_back(
+						dt.TetVec[i].sphere.center,
+						dt.TetVec[j].sphere.center);
+					
+					adjFaceCnt++;
+				}
+
+				if (adjFaceCnt >= 4)
+					break;
+			}
+		}
+
+		return edgeVec;
 	}
 }
