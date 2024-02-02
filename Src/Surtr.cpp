@@ -2,6 +2,8 @@
 #include "Surtr.h"
 
 #include "voro++.hh"
+#include "DT.h"
+#include "DT3D.h"
 
 extern void ExitGame() noexcept;
 
@@ -1362,6 +1364,90 @@ void Surtr::CreateACH(
 {
     achVertexData = std::vector<VertexNormalColor>();
     achIndexData = std::vector<uint32_t>();
+
+    // Test 3D Voronoi Generation.
+    {
+		std::vector<Vector3> points;
+		for (int i = 0; i < 20; i++)
+		{
+			float x = rnd() * 2 - 1;
+			float y = rnd() * 2 - 1;
+            float z = rnd() * 2 - 1;
+			points.emplace_back(x, y, z);
+		}
+
+        const auto dt = DT3D::triangulate(points);
+		for (int i = 0; i < dt.faces.size(); i++)
+		{
+			achVertexData.push_back(VertexNormalColor(dt.faces[i].p0));
+			achVertexData.push_back(VertexNormalColor(dt.faces[i].p1));
+			achVertexData.push_back(VertexNormalColor(dt.faces[i].p2));
+
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+		}
+
+		/*std::vector<DT3D::Edge> edges;
+
+		for (int i = 0; i < dt.tetrahedrons.size(); i++)
+		{
+			for (int j = 0; j < dt.tetrahedrons.size(); j++)
+			{
+				if (i == j)
+					continue;
+
+				if (
+					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t0) ||
+					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t1) ||
+					(dt.tetrahedrons[i].t0 == dt.tetrahedrons[j].t2) ||
+					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t0) ||
+					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t1) ||
+					(dt.tetrahedrons[i].t1 == dt.tetrahedrons[j].t2) ||
+					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t0) ||
+					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t1) ||
+					(dt.tetrahedrons[i].t2 == dt.tetrahedrons[j].t2))
+				{
+                    if ((dt.tetrahedrons[i].sphere.center - dt.tetrahedrons[j].sphere.center).Length() > std::sqrt(3))
+                        continue;
+
+					edges.emplace_back(
+						dt.tetrahedrons[i].sphere.center,
+						dt.tetrahedrons[j].sphere.center);
+				}
+			}
+		}
+
+        for (int i = 0; i < dt.tetrahedrons.size(); i++)
+        {
+			Vector3 v0(dt.tetrahedrons[i].sphere.center);
+            Vector3 v1 = v0 + Vector3(0.05f, 0, 0);
+            Vector3 v2 = v1 + Vector3(0, 0, 0.05f);
+
+			achVertexData.push_back(VertexNormalColor(v0));
+			achVertexData.push_back(VertexNormalColor(v1));
+			achVertexData.push_back(VertexNormalColor(v2));
+
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+        }
+
+		for (int i = 0; i < edges.size(); i++)
+		{
+			Vector3 v0(edges[i].p0);
+			Vector3 v1(edges[i].p1);
+			Vector3 v2(edges[i].p1.x + 0.001f, edges[i].p1.y, edges[i].p1.z);
+
+			achVertexData.push_back(VertexNormalColor(v0));
+			achVertexData.push_back(VertexNormalColor(v1));
+			achVertexData.push_back(VertexNormalColor(v2));
+
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+		}*/
+    }
 
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());

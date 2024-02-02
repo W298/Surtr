@@ -110,6 +110,8 @@
     </FXCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Inc\DT.h" />
+    <ClInclude Include="Inc\DT3D.h" />
     <ClInclude Include="Inc\Mesh.h" />
     <ClInclude Include="Inc\pch.h" />
     <ClInclude Include="Inc\ShadowMap.h" />

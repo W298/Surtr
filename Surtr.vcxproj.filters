@@ -87,6 +87,12 @@
     <ClInclude Include="Inc\VMACH.h">
       <Filter>Inc</Filter>
     </ClInclude>
+    <ClInclude Include="Inc\DT.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
+    <ClInclude Include="Inc\DT3D.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
