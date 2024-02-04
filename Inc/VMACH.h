@@ -19,13 +19,21 @@ namespace VMACH
 			VertexVec(_vertexVec), 
 			FacePlane(Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])) {}
 
-		bool IsEmpty();
+		bool operator==(const PolygonFace& other);
+
+		bool IsEmpty() const;
 		double CalcDistanceToPoint(const Vector3& point) const;
 		Vector3 GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const;
 		Vector3 GetCentriod() const;
 
+		void Render(
+			std::vector<VertexNormalColor>& vertexData,
+			std::vector<uint32_t>& indexData,
+			const Vector3& color = { 0.25f, 0.25f, 0.25f }) const;
+
 		void AddVertex(Vector3 vertex);
 		void Rewind();
+		void Reorder();
 
 		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec);
 	};
@@ -38,6 +46,7 @@ namespace VMACH
 		Polygon3D() = default;
 
 		Vector3 GetCentroid() const;
+		
 		void Render(
 			std::vector<VertexNormalColor>&	vertexData, 
 			std::vector<uint32_t>& indexData, 

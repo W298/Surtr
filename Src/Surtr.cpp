@@ -1356,6 +1356,35 @@ void Surtr::OnDeviceLost()
     CreateCommandListDependentResources();
 }
 
+void loop(std::vector<VMACH::PolygonFace>& faceVec, VMACH::PolygonFace res, const std::vector<DT3D::Edge>& voronoiEdgeVec, const Vector3& findPoint)
+{
+    int counter = 0;
+	for (int i = 0; i < voronoiEdgeVec.size(); i++)
+	{
+		if (voronoiEdgeVec[i].p0 == findPoint || voronoiEdgeVec[i].p1 == findPoint)
+		{
+            Vector3 nextPoint = voronoiEdgeVec[i].p0 == findPoint ? voronoiEdgeVec[i].p1 : voronoiEdgeVec[i].p0;
+            if (res.VertexVec.size() >= 3 && std::abs(res.CalcDistanceToPoint(nextPoint)) > 0.0001)
+                continue;
+
+            if (res.VertexVec.size() >= 3 && nextPoint == res.VertexVec[0])
+            {
+                faceVec.push_back(res);
+                continue;
+            }
+
+            bool dup = res.VertexVec.end() != std::find(res.VertexVec.begin(), res.VertexVec.end(), nextPoint);
+            if (FALSE == dup)
+            {
+				res.AddVertex(nextPoint);
+				loop(faceVec, res, voronoiEdgeVec, nextPoint);
+            }
+		}
+	}
+
+    OutputDebugStringWFormat(L"%d\n", counter);
+}
+
 void Surtr::CreateACH(
     _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
     _In_ const int ichIncludePointLimit,
@@ -1397,6 +1426,46 @@ void Surtr::CreateACH(
         }*/
 
         const std::vector<DT3D::Edge> voronoiEdgeVec = DT3D::Voronoi(dt);
+        
+        std::vector<VMACH::PolygonFace> voronoiFaceVec;
+        std::vector<VMACH::PolygonFace> uniqueVoronoiFaceVec;
+        {
+            for (int i = 0; i < voronoiEdgeVec.size(); i++)
+            {
+				const Vector3 startPoint = voronoiEdgeVec[i].p0;
+
+				std::vector<VMACH::PolygonFace> faceVec;
+				VMACH::PolygonFace res;
+				res.AddVertex(startPoint);
+				loop(faceVec, res, voronoiEdgeVec, startPoint);
+
+                voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
+            }
+
+			for (int i = 0; i < voronoiEdgeVec.size(); i++)
+			{
+				const Vector3 startPoint = voronoiEdgeVec[i].p1;
+
+				std::vector<VMACH::PolygonFace> faceVec;
+				VMACH::PolygonFace res;
+				res.AddVertex(startPoint);
+				loop(faceVec, res, voronoiEdgeVec, startPoint);
+
+				voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
+			}
+        }
+
+        Unique<VMACH::PolygonFace>(voronoiFaceVec, uniqueVoronoiFaceVec);
+
+		for (int i = 0; i < uniqueVoronoiFaceVec.size(); i++)
+		{
+			double a, b, c;
+			a = rnd(); b = rnd(); c = rnd();
+			XMFLOAT3 color(a, b, c);
+
+            uniqueVoronoiFaceVec[i].Reorder();
+            uniqueVoronoiFaceVec[i].Render(achVertexData, achIndexData, color);
+		}
 
 		for (int i = 0; i < dt.TetVec.size(); i++)
 		{
@@ -1413,7 +1482,7 @@ void Surtr::CreateACH(
 			achIndexData.push_back(achIndexData.size());
 		}
 
-		for (int i = 0; i < voronoiEdgeVec.size(); i++)
+		/*for (int i = 0; i < voronoiEdgeVec.size(); i++)
 		{
 			Vector3 v0(voronoiEdgeVec[i].p0);
 			Vector3 v1(voronoiEdgeVec[i].p1);
@@ -1426,7 +1495,7 @@ void Surtr::CreateACH(
 			achIndexData.push_back(achIndexData.size());
 			achIndexData.push_back(achIndexData.size());
 			achIndexData.push_back(achIndexData.size());
-		}
+		}*/
     }
 
     return;

@@ -4,7 +4,22 @@
 using namespace DirectX;
 using namespace SimpleMath;
 
-bool VMACH::PolygonFace::IsEmpty()
+bool VMACH::PolygonFace::operator==(const PolygonFace& other)
+{
+	if (VertexVec.size() != other.VertexVec.size())
+		return false;
+
+	for (int i = 0; i < VertexVec.size(); i++)
+	{
+		bool match = other.VertexVec.end() != std::find(other.VertexVec.begin(), other.VertexVec.end(), VertexVec[i]);
+		if (FALSE == match)
+			return false;
+	}
+
+	return true;
+}
+
+bool VMACH::PolygonFace::IsEmpty() const
 {
 	return VertexVec.size() == 0;
 }
@@ -34,6 +49,24 @@ Vector3 VMACH::PolygonFace::GetCentriod() const
 	return centroid;
 }
 
+void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
+{
+	Vector3 anchor = VertexVec[0];
+	for (int v = 1; v < VertexVec.size() - 1; v++)
+	{
+		Vector3 a = VertexVec[v];
+		Vector3 b = VertexVec[v + 1];
+
+		vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
+		vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
+		vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));
+
+		indexData.push_back(indexData.size());
+		indexData.push_back(indexData.size());
+		indexData.push_back(indexData.size());
+	}
+}
+
 void VMACH::PolygonFace::AddVertex(Vector3 vertex)
 {
 	// #CORRECTION
@@ -52,6 +85,36 @@ void VMACH::PolygonFace::Rewind()
 {
 	std::reverse(VertexVec.begin(), VertexVec.end());
 	FacePlane = Plane(VertexVec[0], VertexVec[1], VertexVec[2]);
+}
+
+void VMACH::PolygonFace::Reorder()
+{
+	Vector3 centroid = GetCentriod();
+	centroid += Vector3(EPSILON, EPSILON, EPSILON);
+
+	Vector3 n = FacePlane.Normal();
+	n.Normalize();
+
+	const auto getAngle = [&](const Vector3& v)
+	{
+		Vector3 v1 = VertexVec[0] - centroid;
+		Vector3 v2 = v - centroid;
+
+		float dot = v1.Dot(v2);
+		float det =
+			v1.x * v2.y * n.z +
+			v2.x * n.y * v1.z +
+			n.x * v1.y * v2.z -
+			v1.z * v2.y * n.x -
+			v2.z * n.y * v1.x -
+			n.z * v1.y * v2.x;
+		float angle = atan2(det, dot);
+		angle = (angle < 0) ? XM_2PI + angle : angle;
+
+		return angle;
+	};
+
+	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b) { return getAngle(a) > getAngle(b); });
 }
 
 VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec)
@@ -113,22 +176,7 @@ Vector3 VMACH::Polygon3D::GetCentroid() const
 void VMACH::Polygon3D::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
 {
 	for (int f = 0; f < FaceVec.size(); f++)
-	{
-		Vector3 anchor = FaceVec[f].VertexVec[0];
-		for (int v = 1; v < FaceVec[f].VertexVec.size() - 1; v++)
-		{
-			Vector3 a = FaceVec[f].VertexVec[v];
-			Vector3 b = FaceVec[f].VertexVec[v + 1];
-
-			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));
-
-			indexData.push_back(indexData.size());
-			indexData.push_back(indexData.size());
-			indexData.push_back(indexData.size());
-		}
-	}
+		FaceVec[f].Render(vertexData, indexData, color);
 }
 
 void VMACH::Polygon3D::Translate(const Vector3& vector)

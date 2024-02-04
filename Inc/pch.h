@@ -94,6 +94,13 @@ static void DebugOut(const wchar_t* fmt, ...)
 	OutputDebugString(dbg_out);
 }
 
+template <typename T>
+static void Unique(const std::vector<T>& dupVec, std::vector<T>& uniqueVec)
+{
+	std::copy_if(dupVec.begin(), dupVec.end(), std::back_inserter(uniqueVec),
+		[&](const T& e) { return uniqueVec.end() == std::find(uniqueVec.begin(), uniqueVec.end(), e); });
+}
+
 #define OutputDebugStringWFormat(fmt, ...) DebugOut(fmt, __VA_ARGS__);
 
 #define TIMER_INIT \

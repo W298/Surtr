@@ -1,5 +1,7 @@
 #pragma once
 
+#include "VMACH.h"
+
 namespace DT3D
 {
 	using DirectX::SimpleMath::Vector3;
@@ -305,6 +307,9 @@ namespace DT3D
 			}
 		}
 
-		return edgeVec;
+		std::vector<DT3D::Edge> uniqueEdgeVec;
+		Unique<DT3D::Edge>(edgeVec, uniqueEdgeVec);
+
+		return uniqueEdgeVec;
 	}
 }
