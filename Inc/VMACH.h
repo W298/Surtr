@@ -8,6 +8,12 @@ namespace VMACH
 	using DirectX::SimpleMath::Plane;
 	using DirectX::SimpleMath::Vector3;
 
+	struct PolygonEdge
+	{
+	public:
+		std::vector<Vector3>		VertexVec;
+	};
+
 	struct PolygonFace
 	{
 	public:
@@ -35,6 +41,7 @@ namespace VMACH
 		void Rewind();
 		void Reorder();
 
+		static PolygonFace ClipMeshFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec);
 		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec);
 	};
 
@@ -44,8 +51,10 @@ namespace VMACH
 		std::vector<PolygonFace>	FaceVec;
 
 		Polygon3D() = default;
+		Polygon3D(std::vector<PolygonFace> _faceVec) : FaceVec(_faceVec) {}
 
 		Vector3 GetCentroid() const;
+		bool Contains(const Vector3& point) const;
 		
 		void Render(
 			std::vector<VertexNormalColor>&	vertexData, 
@@ -53,7 +62,11 @@ namespace VMACH
 			const Vector3& color = { 0.25f, 0.25f, 0.25f }) const;
 		
 		void Translate(const Vector3& vector);
+		void Scale(const float& scalar);
+		void Scale(const Vector3& vector);
 
+		static Polygon3D ClipMesh(const Polygon3D& mesh, const Polygon3D& clippingPolygon);
+		static Polygon3D ClipMeshFace(const Polygon3D& mesh, const PolygonFace& clippingFace);
 		static Polygon3D ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon);
 		static Polygon3D ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace);
 	};
@@ -144,6 +157,8 @@ namespace VMACH
 		std::list<ConvexHullEdge>                            m_edgeList = {};
 		std::unordered_map<size_t, ConvexHullEdge*>          m_edgeMap = {};
 	};
+
+	Polygon3D GetBoxPolygon();
 };
 
 #endif

@@ -11,7 +11,7 @@ using namespace DirectX;
 using namespace SimpleMath;
 using Microsoft::WRL::ComPtr;
 
-const auto rnd = []() { return double(rand()) / RAND_MAX; };
+const auto rnd = []() { return double(rand() * 0.75) / RAND_MAX; };
 
 Surtr::Surtr() noexcept :
     m_window(nullptr),
@@ -54,8 +54,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
     m_lightRotation = false;
     
     m_executeNextStep = false;
-    m_ichIncludePointLimit = 20;
-    m_ichFaceCnt = 0;
 
     m_sceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
     m_sceneBounds.Radius = 100.0f;
@@ -67,7 +65,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
     m_camPitch = 0.0f;
     m_camPosition = XMVectorSet(0.0f, 5.0f, 10.0f, 0.0f);
     m_camLookTarget = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
-    m_orbitMode = false;
     m_camMoveSpeed = 5.0f;
     m_camRotateSpeed = 0.5f;
 
@@ -235,8 +232,7 @@ void Surtr::UpdateMesh()
 		auto achVertexData = std::vector<VertexNormalColor>();
 		auto achIndexData = std::vector<uint32_t>();
 
-        m_ichIncludePointLimit += 10;
-        CreateACH(m_meshVec[0]->VertexData, m_ichIncludePointLimit, achVertexData, achIndexData);
+        CreateACH(m_meshVec[0]->VertexData, m_meshVec[0]->IndexData, achVertexData, achIndexData);
         
         delete m_meshVec[2];
         m_meshVec[2] = PrepareMeshResource(achVertexData, achIndexData);
@@ -403,8 +399,16 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption)
+                if ((Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
                     m_meshVec[i]->Render(m_commandList.Get());
+			}
+
+            m_commandList->SetPipelineState(m_coloredWireframePSO.Get());
+
+			for (int i = 0; i < m_meshVec.size(); i++)
+			{
+				if ((Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && !(Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
+					m_meshVec[i]->Render(m_commandList.Get());
 			}
 
             // Draw imgui.
@@ -415,7 +419,7 @@ void Surtr::Render()
 
                 {
                     const auto io = ImGui::GetIO();
-                    ImGui::Begin("Surtr");
+                    ImGui::Begin("Surtr", NULL, ImGuiWindowFlags_AlwaysAutoResize);
 
                     ImGui::Text("%d x %d (Resolution)", m_outputWidth, m_outputHeight);
                     ImGui::Text("%d x %d (Shadow Map Resolution)", m_shadowMapSize, m_shadowMapSize);
@@ -427,17 +431,24 @@ void Surtr::Render()
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-                    ImGui::Text("ICH Face Count: %d", m_ichFaceCnt);
-                    ImGui::Text("ICH Included Points: %d (%f%% of total)", m_ichIncludePointLimit, m_ichIncludePointLimit * 100.0f / (m_meshVec[0]->VertexCount));
-                    if (ImGui::Button("+10 Limit (Regenerate)")) 
-                    {
-                        m_executeNextStep = true;
-                    }
+                    ImGui::Text("[Arguments]");
+                    ImGui::SliderInt("ICH Included Points", &m_decompositionArgument.ichIncludePointLimit, 20, 1000);
+                    ImGui::SliderFloat("ACH Plane Gap Inverse", &m_decompositionArgument.achPlaneGapInverse, 0.0f, 10000.0f);
+					if (ImGui::Button("Regenerate!")) { m_executeNextStep = true; }
+
+                    ImGui::Dummy(ImVec2(0.0f, 10.0f));
+
+                    ImGui::Text("[Results]");
+                    ImGui::Text("ICH Face Count: %d", m_decompositionResult.ichFaceCnt);
+                    
+                    if (m_decompositionResult.achErrorPointCnt == 0)
+                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "ALL VERTEX CONTAINED");
+                    else
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "%d VERTEX NOT CONTAINED!", m_decompositionResult.achErrorPointCnt);
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
-                    ImGui::Text("Rotate speed");
-                    ImGui::SliderFloat("_", &m_camRotateSpeed, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Rotate speed", &m_camRotateSpeed, 0.0f, 1.0f);
                     ImGui::Text("Move speed: %.3f (Scroll to Adjust)", m_camMoveSpeed);
 
                     ImGui::Dummy(ImVec2(0.0f, 20.0f));
@@ -848,7 +859,7 @@ void Surtr::CreateDeviceDependentResources()
                 IID_PPV_ARGS(m_opaquePSO.ReleaseAndGetAddressOf())));
 
         // Create Wireframe PSO.
-        auto wireframePSBlob = DX::ReadData(L"DebugPS.cso");
+        auto wireframePSBlob = DX::ReadData(L"WireframePS.cso");
         auto wireframePSODesc = D3D12_GRAPHICS_PIPELINE_STATE_DESC(psoDesc);
         wireframePSODesc.PS = { wireframePSBlob.data(), wireframePSBlob.size() };
         wireframePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
@@ -857,6 +868,17 @@ void Surtr::CreateDeviceDependentResources()
             m_d3dDevice->CreateGraphicsPipelineState(
                 &wireframePSODesc,
                 IID_PPV_ARGS(m_wireframePSO.ReleaseAndGetAddressOf())));
+
+        // Create Colored Wireframe PSO.
+		auto coloredWireframePSBlob = DX::ReadData(L"ColoredWireframePS.cso");
+		auto coloredWireframePSODesc = D3D12_GRAPHICS_PIPELINE_STATE_DESC(psoDesc);
+        coloredWireframePSODesc.PS = { coloredWireframePSBlob.data(), coloredWireframePSBlob.size() };
+        coloredWireframePSODesc.RasterizerState.FillMode = D3D12_FILL_MODE_WIREFRAME;
+        coloredWireframePSODesc.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+		DX::ThrowIfFailed(
+			m_d3dDevice->CreateGraphicsPipelineState(
+				&coloredWireframePSODesc,
+				IID_PPV_ARGS(m_coloredWireframePSO.ReleaseAndGetAddressOf())));
 
         // Create No shadow PSO.
 		auto noShadowPSBlob = DX::ReadData(L"NoShadowPS.cso");
@@ -1167,7 +1189,14 @@ void Surtr::CreateCommandListDependentResources()
 	
     std::vector<VertexNormalColor> objectVertexData;
     std::vector<uint32_t> objectIndexData;
-    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+
+#if RENDER_OBJECT == 0
+    LoadModelData("Resources\\Models\\lucy.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 20, 0), objectVertexData, objectIndexData);
+#elif RENDER_OBJECT == 1
+    LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+#else
+    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+#endif
     
     Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
     m_meshVec.push_back(objectModel);
@@ -1185,7 +1214,7 @@ void Surtr::CreateCommandListDependentResources()
 
 	std::vector<VertexNormalColor> convexHullVertexData;
 	std::vector<uint32_t> convexHullIndexData;
-	CreateACH(objectVertexData, m_ichIncludePointLimit, convexHullVertexData, convexHullIndexData);
+	CreateACH(objectVertexData, objectIndexData, convexHullVertexData, convexHullIndexData);
 
 	if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
 	{
@@ -1202,14 +1231,12 @@ void Surtr::CreateCommandListDependentResources()
 
     WaitForGpu();
 
-    TestACHCreation(objectVertexData, m_ichIncludePointLimit);
+    // TestACHCreation(objectVertexData);
     // TestECHCreation(objectVertexData);
 
     // Release no longer needed upload heaps.
     for (int i = 0; i < 4; i++)
-    {
         textureUploadHeaps[i].Reset();
-    }
 }
 
 void Surtr::WaitForGpu() noexcept
@@ -1387,7 +1414,7 @@ void loop(std::vector<VMACH::PolygonFace>& faceVec, VMACH::PolygonFace res, cons
 
 void Surtr::CreateACH(
     _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
-    _In_ const int ichIncludePointLimit,
+    _In_ const std::vector<uint32_t>& visualMeshIndices, 
     _Out_ std::vector<VertexNormalColor>& achVertexData, 
     _Out_ std::vector<uint32_t>& achIndexData)
 {
@@ -1395,16 +1422,17 @@ void Surtr::CreateACH(
     achIndexData = std::vector<uint32_t>();
 
     // Test 3D Voronoi Generation.
+    const auto voronoiGen = [&]() 
     {
-		std::vector<Vector3> points;
+        std::vector<Vector3> points;
         int pCount = 0;
         while (pCount < 50)
         {
-			float x = rnd() * 5;
-			float y = rnd() * 5;
-			float z = rnd() * 5;
+            float x = rnd() * 5;
+            float y = rnd() * 5;
+            float z = rnd() * 5;
 
-			Vector3 p(x, y, z);
+            Vector3 p(x, y, z);
 
             if (points.end() == std::find_if(points.begin(), points.end(), [&](const Vector3& pp) { return (p - pp).Length() < 1; }))
             {
@@ -1414,6 +1442,7 @@ void Surtr::CreateACH(
         }
 
         const auto dt = DT3D::Triangulate(points);
+        // Render triangulate.
         /*for (int i = 0; i < dt.faces.size(); i++)
         {
             achVertexData.push_back(VertexNormalColor(dt.faces[i].p0));
@@ -1426,85 +1455,86 @@ void Surtr::CreateACH(
         }*/
 
         const std::vector<DT3D::Edge> voronoiEdgeVec = DT3D::Voronoi(dt);
-        
+
         std::vector<VMACH::PolygonFace> voronoiFaceVec;
         std::vector<VMACH::PolygonFace> uniqueVoronoiFaceVec;
         {
             for (int i = 0; i < voronoiEdgeVec.size(); i++)
             {
-				const Vector3 startPoint = voronoiEdgeVec[i].p0;
+                const Vector3 startPoint = voronoiEdgeVec[i].p0;
 
-				std::vector<VMACH::PolygonFace> faceVec;
-				VMACH::PolygonFace res;
-				res.AddVertex(startPoint);
-				loop(faceVec, res, voronoiEdgeVec, startPoint);
+                std::vector<VMACH::PolygonFace> faceVec;
+                VMACH::PolygonFace res;
+                res.AddVertex(startPoint);
+                loop(faceVec, res, voronoiEdgeVec, startPoint);
 
                 voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
             }
 
-			for (int i = 0; i < voronoiEdgeVec.size(); i++)
-			{
-				const Vector3 startPoint = voronoiEdgeVec[i].p1;
+            for (int i = 0; i < voronoiEdgeVec.size(); i++)
+            {
+                const Vector3 startPoint = voronoiEdgeVec[i].p1;
 
-				std::vector<VMACH::PolygonFace> faceVec;
-				VMACH::PolygonFace res;
-				res.AddVertex(startPoint);
-				loop(faceVec, res, voronoiEdgeVec, startPoint);
+                std::vector<VMACH::PolygonFace> faceVec;
+                VMACH::PolygonFace res;
+                res.AddVertex(startPoint);
+                loop(faceVec, res, voronoiEdgeVec, startPoint);
 
-				voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
-			}
+                voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
+            }
         }
 
         Unique<VMACH::PolygonFace>(voronoiFaceVec, uniqueVoronoiFaceVec);
 
-		for (int i = 0; i < uniqueVoronoiFaceVec.size(); i++)
-		{
-			double a, b, c;
-			a = rnd(); b = rnd(); c = rnd();
-			XMFLOAT3 color(a, b, c);
+        // Render voronoi faces.
+        for (int i = 0; i < uniqueVoronoiFaceVec.size(); i++)
+        {
+            double a, b, c;
+            a = rnd(); b = rnd(); c = rnd();
+            XMFLOAT3 color(a, b, c);
 
             uniqueVoronoiFaceVec[i].Reorder();
             uniqueVoronoiFaceVec[i].Render(achVertexData, achIndexData, color);
-		}
+        }
 
-		for (int i = 0; i < dt.TetVec.size(); i++)
-		{
-			Vector3 v0(dt.TetVec[i].sphere.center);
-			Vector3 v1 = v0 + Vector3(0.01f, 0, 0);
-			Vector3 v2 = v1 + Vector3(0, 0, 0.01f);
+        // Render circumsphere center.
+        for (int i = 0; i < dt.TetVec.size(); i++)
+        {
+            Vector3 v0(dt.TetVec[i].sphere.center);
+            Vector3 v1 = v0 + Vector3(0.01f, 0, 0);
+            Vector3 v2 = v1 + Vector3(0, 0, 0.01f);
 
-			achVertexData.push_back(VertexNormalColor(v0));
-			achVertexData.push_back(VertexNormalColor(v1));
-			achVertexData.push_back(VertexNormalColor(v2));
+            achVertexData.push_back(VertexNormalColor(v0));
+            achVertexData.push_back(VertexNormalColor(v1));
+            achVertexData.push_back(VertexNormalColor(v2));
 
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-		}
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+        }
 
-		/*for (int i = 0; i < voronoiEdgeVec.size(); i++)
-		{
-			Vector3 v0(voronoiEdgeVec[i].p0);
-			Vector3 v1(voronoiEdgeVec[i].p1);
-			Vector3 v2(voronoiEdgeVec[i].p1.x + 0.001f, voronoiEdgeVec[i].p1.y, voronoiEdgeVec[i].p1.z);
+        // Render voronoi edges.
+        /*for (int i = 0; i < voronoiEdgeVec.size(); i++)
+        {
+            Vector3 v0(voronoiEdgeVec[i].p0);
+            Vector3 v1(voronoiEdgeVec[i].p1);
+            Vector3 v2(voronoiEdgeVec[i].p1.x + 0.001f, voronoiEdgeVec[i].p1.y, voronoiEdgeVec[i].p1.z);
 
-			achVertexData.push_back(VertexNormalColor(v0));
-			achVertexData.push_back(VertexNormalColor(v1));
-			achVertexData.push_back(VertexNormalColor(v2));
+            achVertexData.push_back(VertexNormalColor(v0));
+            achVertexData.push_back(VertexNormalColor(v1));
+            achVertexData.push_back(VertexNormalColor(v2));
 
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-			achIndexData.push_back(achIndexData.size());
-		}*/
-    }
-
-    return;
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+            achIndexData.push_back(achIndexData.size());
+        }*/
+    };
 
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
     std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.position; });
 
-    VMACH::ConvexHull ich(vertices, ichIncludePointLimit);
+    VMACH::ConvexHull ich(vertices, m_decompositionArgument.ichIncludePointLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
     // ich.Render(achVertexData, achIndexData);
 
@@ -1517,7 +1547,7 @@ void Surtr::CreateACH(
         ichFaceNormalVec.push_back(normal);
     }
 
-    m_ichFaceCnt = ichFaceNormalVec.size();
+    m_decompositionResult.ichFaceCnt = ichFaceNormalVec.size();
 
     // 3. Calculate bounding box.
     double minX, maxX, minY, maxY, minZ, maxZ;
@@ -1570,43 +1600,10 @@ void Surtr::CreateACH(
     }
 
     // 5. Init bounding box polygon.
-    VMACH::Polygon3D bbPolygon;
-	bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
-		Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
-		}));
-    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
-		Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
-        }));
-    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
-		Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
-        }));
-    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
-		Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
-        }));
-    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
-		Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
-        }));
-    bbPolygon.FaceVec.push_back(VMACH::PolygonFace({
-		Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
-		Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
-        }));
-
-	for (int f = 0; f < bbPolygon.FaceVec.size(); f++)
-	{
-		for (int v = 0; v < bbPolygon.FaceVec[f].VertexVec.size(); v++)
-		{
-			bbPolygon.FaceVec[f].VertexVec[v] *= Vector3((maxX - minX), (maxY - minY), (maxZ - minZ));
-            bbPolygon.FaceVec[f].VertexVec[v] *= 2.0;                   // #CORRECTION
-			bbPolygon.FaceVec[f].VertexVec[v] += bbCenter;
-		}
-
-        bbPolygon.FaceVec[f].Rewind();
-	}
+    VMACH::Polygon3D bbPolygon = VMACH::GetBoxPolygon();
+    bbPolygon.Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
+    bbPolygon.Scale(2.0);
+    bbPolygon.Translate(bbCenter);
 
     // 6. Collect polygon face using ICH face planes.
     const auto collectPolygonFaces = [&](Plane p, Vector3 x)
@@ -1623,10 +1620,11 @@ void Surtr::CreateACH(
         Vector3 v = u.Cross(n);
 		v.Normalize();
 
-        Vector3 p1 = x + u * 10 - v * 10 + n * maxAxisScale / 3000.0;   // #CORRECTION
-        Vector3 p2 = x + u * 10 + v * 10 + n * maxAxisScale / 3000.0;
-        Vector3 p3 = x - u * 10 + v * 10 + n * maxAxisScale / 3000.0;
-        Vector3 p4 = x - u * 10 - v * 10 + n * maxAxisScale / 3000.0;
+        // #CORRECTION
+        Vector3 p1 = x + u * 100000 - v * 100000 + n * maxAxisScale / m_decompositionArgument.achPlaneGapInverse;
+        Vector3 p2 = x + u * 100000 + v * 100000 + n * maxAxisScale / m_decompositionArgument.achPlaneGapInverse;
+        Vector3 p3 = x - u * 100000 + v * 100000 + n * maxAxisScale / m_decompositionArgument.achPlaneGapInverse;
+        Vector3 p4 = x - u * 100000 - v * 100000 + n * maxAxisScale / m_decompositionArgument.achPlaneGapInverse;
 
 		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
         cf.Rewind();
@@ -1641,34 +1639,65 @@ void Surtr::CreateACH(
     }
 
     // 7. Clip bounding box polygon with clipping faces.
-	VMACH::Polygon3D poly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
-    // poly.Render(achVertexData, achIndexData);
+	VMACH::Polygon3D achPoly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
+
+	// Check ACH contains all points or not.
+    m_decompositionResult.achErrorPointCnt = 0;
+	for (int i = 0; i < visualMeshVertices.size(); i++)
+	{
+		Vector3 vertPos = visualMeshVertices[i].position;
+
+		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
+		boxPoly.Scale(0.01);
+		boxPoly.Translate(vertPos);
+
+        bool isContain = achPoly.Contains(vertPos);
+        if (FALSE == isContain)
+            m_decompositionResult.achErrorPointCnt++;
+
+		boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));
+	}
+
+	// Generate mesh polygon.
+	VMACH::Polygon3D meshPolygon;
+	for (uint32_t i = 0; i < visualMeshIndices.size(); i += 3)
+	{
+		VMACH::PolygonFace face;
+		face.AddVertex(visualMeshVertices[visualMeshIndices[i]].position);
+		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 1]].position);
+		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 2]].position);
+
+		meshPolygon.FaceVec.push_back(face);
+	}
+
+    const auto clippedMesh = VMACH::Polygon3D::ClipMeshFace(
+        meshPolygon, 
+        VMACH::PolygonFace({ Vector3(100, 3, -100), Vector3(-100, 3, -100), Vector3(-100, 3, 100), Vector3(100, 3, 100) }));
+    
+    clippedMesh.Render(achVertexData, achIndexData);
+
+    return;
 
     // 8. Voronoi diagram generation.
-    Vector3 bbMinVec(minX, minY, minZ);
-    Vector3 bbMaxVec(maxX, maxY, maxZ);
+    Vector3 voroBBMinVec(minX, minY, minZ);
+    Vector3 voroBBMaxVec(maxX, maxY, maxZ);
+    const int cellCount = 48;
 
-    bbMinVec -= bbCenter;
-    bbMaxVec -= bbCenter;
-
-    bbMinVec *= 0.7;
-    bbMaxVec *= 0.7;
-
-    bbMinVec += bbCenter;
-    bbMaxVec += bbCenter;
-
-	voro::container con(bbMinVec.x, bbMaxVec.x, bbMinVec.y, bbMaxVec.y, bbMinVec.z, bbMaxVec.z, 2, 2, 2, false, false, false, 8);
+	voro::container voroCon(
+        voroBBMinVec.x, voroBBMaxVec.x, 
+        voroBBMinVec.y, voroBBMaxVec.y, 
+        voroBBMinVec.z, voroBBMaxVec.z, 2, 2, 2, false, false, false, 8);
 
 	int i = 0;
 	double x, y, z;
-	while (i < 24)
+	while (i < cellCount)
 	{
-		x = bbMinVec.x + rnd() * (bbMaxVec.x - bbMinVec.x);
-		y = bbMinVec.y + rnd() * (bbMaxVec.y - bbMinVec.y);
-		z = bbMinVec.z + rnd() * (bbMaxVec.z - bbMinVec.z);
-		if (con.point_inside(x, y, z))
+		x = voroBBMinVec.x + rnd() * (voroBBMaxVec.x - voroBBMinVec.x) * 0.75f;
+		y = voroBBMinVec.y + rnd() * (voroBBMaxVec.y - voroBBMinVec.y) * 0.75f;
+		z = voroBBMinVec.z + rnd() * (voroBBMaxVec.z - voroBBMinVec.z) * 0.75f;
+		if (voroCon.point_inside(x, y, z))
 		{
-			con.put(i, x, y, z);
+			voroCon.put(i, x, y, z);
 			i++;
 		}
 	}
@@ -1679,15 +1708,15 @@ void Surtr::CreateACH(
 	voro::voronoicell_neighbor voroCell;
 	std::vector<int> neighborVec;
 
-	voro::c_loop_all cl(con);
+	voro::c_loop_all cl(voroCon);
 	int dimension = 0;
-	if (cl.start()) do if (con.compute_cell(voroCell, cl)) 
+	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl)) 
     {
 		dimension += 1;
 	} while (cl.inc());
 
 	int counter = 0;
-	if (cl.start()) do if (con.compute_cell(voroCell, cl)) 
+	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl)) 
     {
 		cl.pos(x, y, z);
         id = cl.pid();
@@ -1716,9 +1745,6 @@ void Surtr::CreateACH(
                     cellVertices[3 * vertIndex + 2]));
             }
             cur += cnt + 1;
-
-            if (face.FacePlane.x == 0 || face.FacePlane.y == 0 || face.FacePlane.z == 0)
-                continue;
 
             face.Rewind();
             voroPoly.FaceVec.push_back(face);
@@ -1751,37 +1777,22 @@ void Surtr::CreateACH(
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
 
-        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipPolygon(poly, voroPolyVec[i]);
+        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipPolygon(achPoly, voroPolyVec[i]);
+        VMACH::Polygon3D clippedMeshPoly = VMACH::Polygon3D::ClipMesh(meshPolygon, voroPolyVec[i]);
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
 		outer *= 2;
 
-        clippedPoly.Translate(outer);
-        clippedPoly.Render(achVertexData, achIndexData, color);
+        // clippedPoly.Translate(outer);
+        // clippedPoly.Render(achVertexData, achIndexData, color);
+        
+        clippedMeshPoly.Translate(outer);
+        clippedMeshPoly.Render(achVertexData, achIndexData, color);
     }
-
-    // Calculate ACH volume.
-	{
-		double vol = 0;
-		for (int f = 0; f < poly.FaceVec.size(); f++)
-		{
-			Vector3 anchor = poly.FaceVec[f].VertexVec[0];
-			for (int v = 1; v < poly.FaceVec[f].VertexVec.size() - 1; v++)
-			{
-				Vector3 a = poly.FaceVec[f].VertexVec[v];
-				Vector3 b = poly.FaceVec[f].VertexVec[v + 1];
-
-                VMACH::ConvexHullFace chf(anchor, a, b);
-                vol += VMACH::ConvexHull::Volume(chf, VMACH::ConvexHullVertex(0, 5, 0));
-			}
-		}
-
-		OutputDebugStringWFormat(L"ACH Volume: %f\n", vol);
-	}
 }
 
-void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices, _In_ const int intermediateConvexHullLimit)
+void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices)
 {
 	TIMER_INIT;
 	TIMER_START;
@@ -1790,7 +1801,7 @@ void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMes
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
     std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.position; });
 
-    VMACH::ConvexHull ich(vertices, intermediateConvexHullLimit);
+    VMACH::ConvexHull ich(vertices, m_decompositionArgument.ichIncludePointLimit);
     const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
 
     // 2. Collect ICH face normals.

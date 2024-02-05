@@ -137,7 +137,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="Shaders\DebugPS.hlsl">
+    <FxCompile Include="Shaders\WireframePS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\NoShadowPS.hlsl">
@@ -153,6 +153,9 @@
       <Filter>Shaders</Filter>
     </FxCompile>
     <FxCompile Include="Shaders\VS.hlsl">
+      <Filter>Shaders</Filter>
+    </FxCompile>
+    <FxCompile Include="Shaders\ColoredWireframePS.hlsl">
       <Filter>Shaders</Filter>
     </FxCompile>
   </ItemGroup>

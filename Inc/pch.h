@@ -16,6 +16,7 @@
 #define WIN32_LEAN_AND_MEAN
 
 #define EPSILON 1e-12
+#define VERTEX_EQUAL_EPSILON 1e-4
 
 #include <Windows.h>
 

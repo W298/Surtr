@@ -36,7 +36,7 @@ public:
 	uint32_t										    IndexCount;
 	uint8_t												RenderOption;
 
-	Mesh() : VBV({ 0 }), IBV({ 0 }), VBSize(0), IBSize(0), VertexCount(0), IndexCount(0), RenderOption(SOLID | WIREFRAME) {}
+	Mesh() : VBV({ 0 }), IBV({ 0 }), VBSize(0), IBSize(0), VertexCount(0), IndexCount(0), RenderOption(WIREFRAME) {}
 	~Mesh()
 	{
 		VB.Reset();

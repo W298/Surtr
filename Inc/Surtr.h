@@ -1,5 +1,7 @@
 #pragma once
 
+#define RENDER_OBJECT 2
+
 #include "ShadowMap.h"
 #include "Mesh.h"
 #include "VMACH.h"
@@ -57,6 +59,18 @@ private:
         uint8_t             padding[104];
     };
 
+	struct DecompositionArgument
+	{
+		INT                 ichIncludePointLimit = 100;
+		FLOAT               achPlaneGapInverse = 1000.0f;
+	};
+
+	struct DecompositionResult
+	{
+		UINT                ichFaceCnt = 0;
+		UINT                achErrorPointCnt = 0;
+	};
+
     void Update(DX::StepTimer const& timer);
     void UpdateMesh();
     void Render();
@@ -74,15 +88,12 @@ private:
 
     // Core feature functions
     void CreateACH(
-        _In_ const std::vector<VertexNormalColor>& visualMeshVertices,
-        _In_ const int ichIncludePointLimit,
+        _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
+        _In_ const std::vector<uint32_t>& visualMeshIndices,
         _Out_ std::vector<VertexNormalColor>& achVertexData, 
         _Out_ std::vector<uint32_t>& achIndexData);
 
-	void TestACHCreation(
-		_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
-		_In_ const int intermediateConvexHullLimit);
-
+    void TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
     void TestECHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
 
     // Helper functions
@@ -168,6 +179,7 @@ private:
     Microsoft::WRL::ComPtr<ID3D12PipelineState>         m_opaquePSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState>         m_noShadowPSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState>         m_wireframePSO;
+    Microsoft::WRL::ComPtr<ID3D12PipelineState>         m_coloredWireframePSO;
     Microsoft::WRL::ComPtr<ID3D12PipelineState>         m_shadowPSO;
 
     // CB
@@ -210,8 +222,8 @@ private:
     
     // Feature parameters
     bool                                                m_executeNextStep;
-    int                                                 m_ichIncludePointLimit;
-    int                                                 m_ichFaceCnt;
+    DecompositionArgument                               m_decompositionArgument;
+    DecompositionResult                                 m_decompositionResult;
 
     // WVP matrices
     DirectX::XMMATRIX                                   m_worldMatrix;

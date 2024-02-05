@@ -71,7 +71,7 @@ void VMACH::PolygonFace::AddVertex(Vector3 vertex)
 {
 	// #CORRECTION
 	bool notExist = VertexVec.end() == std::find_if(VertexVec.begin(), VertexVec.end(), 
-		[&](const Vector3& v) { return (v - vertex).Length() < EPSILON; });
+		[&](const Vector3& v) { return (v - vertex).Length() < VERTEX_EQUAL_EPSILON; });
 	
 	if (FALSE == notExist)
 		return;
@@ -117,6 +117,57 @@ void VMACH::PolygonFace::Reorder()
 	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b) { return getAngle(a) > getAngle(b); });
 }
 
+VMACH::PolygonFace VMACH::PolygonFace::ClipMeshFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
+{
+	PolygonFace	workingFace;
+	PolygonEdge clippedEdge;
+
+	for (int i = 0; i < inFace.VertexVec.size(); i++)
+	{
+		Vector3 point1 = inFace.VertexVec[i];
+		Vector3 point2 = inFace.VertexVec[(i + 1) % inFace.VertexVec.size()];
+
+		// (-) distance = inside polygon (plane).
+		// (+) distance = outside polygon (plane).
+		double d1 = clippingFace.CalcDistanceToPoint(point1);
+		double d2 = clippingFace.CalcDistanceToPoint(point2);
+
+		// #CORRECTION
+		// IN, IN
+		if (d1 <= +EPSILON && d2 <= +EPSILON)
+		{
+			workingFace.AddVertex(point2);
+		}
+		// IN, OUT
+		else if (d1 <= +EPSILON && d2 > -EPSILON)
+		{
+			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
+			clippedEdge.VertexVec.push_back(intersection);
+
+			workingFace.AddVertex(intersection);
+		}
+		// OUT, OUT
+		else if (d1 > -EPSILON && d2 > -EPSILON)
+		{
+			continue;
+		}
+		// OUT, IN
+		else
+		{
+			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
+			clippedEdge.VertexVec.push_back(intersection);
+
+			workingFace.AddVertex(intersection);
+			workingFace.AddVertex(point2);
+		}
+	}
+
+	if (clippedEdge.VertexVec.size() >= 2)
+		edgeVec.push_back(clippedEdge);
+
+	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace();
+}
+
 VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec)
 {
 	PolygonFace	workingFace;
@@ -131,6 +182,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const
 		double d1 = clippingFace.CalcDistanceToPoint(point1);
 		double d2 = clippingFace.CalcDistanceToPoint(point2);
 
+		// #CORRECTION
 		// IN, IN
 		if (d1 <= +EPSILON && d2 <= +EPSILON)
 		{
@@ -173,6 +225,17 @@ Vector3 VMACH::Polygon3D::GetCentroid() const
 	return centroid;
 }
 
+bool VMACH::Polygon3D::Contains(const Vector3& point) const
+{
+	for (const PolygonFace& f : FaceVec)
+	{
+		if (f.CalcDistanceToPoint(point) > +EPSILON)
+			return false;
+	}
+
+	return true;
+}
+
 void VMACH::Polygon3D::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
 {
 	for (int f = 0; f < FaceVec.size(); f++)
@@ -184,6 +247,96 @@ void VMACH::Polygon3D::Translate(const Vector3& vector)
 	for (int f = 0; f < FaceVec.size(); f++)
 		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
 			FaceVec[f].VertexVec[v] += vector;
+}
+
+void VMACH::Polygon3D::Scale(const float& scalar)
+{
+	for (int f = 0; f < FaceVec.size(); f++)
+		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
+			FaceVec[f].VertexVec[v] *= scalar;
+}
+
+void VMACH::Polygon3D::Scale(const Vector3& vector)
+{
+	for (int f = 0; f < FaceVec.size(); f++)
+		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
+			FaceVec[f].VertexVec[v] *= vector;
+}
+
+VMACH::Polygon3D VMACH::Polygon3D::ClipMesh(const Polygon3D& mesh, const Polygon3D& clippingPolygon)
+{
+	Polygon3D outMesh = mesh;
+
+	// Clip polygon for each faces from clipping polygon.
+	for (int i = 0; i < clippingPolygon.FaceVec.size(); i++)
+		outMesh = ClipMeshFace(outMesh, clippingPolygon.FaceVec[i]);
+
+	return outMesh;
+}
+
+VMACH::Polygon3D VMACH::Polygon3D::ClipMeshFace(const Polygon3D& mesh, const PolygonFace& clippingFace)
+{
+	std::vector<PolygonEdge> edgeVec;
+
+	// Clip Polygon3D
+	Polygon3D outPolygon;
+	for (int i = 0; i < mesh.FaceVec.size(); i++)
+	{
+		PolygonFace clippedFace = PolygonFace::ClipMeshFace(mesh.FaceVec[i], clippingFace, edgeVec);
+		if (FALSE == clippedFace.IsEmpty())
+			outPolygon.FaceVec.push_back(clippedFace);
+	}
+
+	if (edgeVec.size() < 3)
+		return outPolygon;
+
+	PolygonFace closeFace;
+	closeFace.AddVertex(edgeVec[0].VertexVec[0]);
+	closeFace.AddVertex(edgeVec[0].VertexVec[1]);
+
+	Vector3 findPoint = edgeVec[0].VertexVec[1];
+
+	std::swap(edgeVec[0], edgeVec.back());
+	edgeVec.pop_back();
+
+	while (edgeVec.size() != 0)
+	{
+		for (int e = 0; e < edgeVec.size(); e++)
+		{
+			int id = -1;
+			for (int v = 0; v < 2; v++)
+			{
+				if (Vector3::Distance(edgeVec[e].VertexVec[v], findPoint) < VERTEX_EQUAL_EPSILON)
+				{
+					id = v;
+					break;
+				}
+			}
+
+			if (id != -1)
+			{
+				closeFace.AddVertex(edgeVec[e].VertexVec[(id + 1) % 2]);
+				
+				if (closeFace.VertexVec.size() == 3 &&
+					closeFace.FacePlane.Normal().Dot(clippingFace.FacePlane.Normal()) <= 0)
+				{
+					closeFace.Rewind();
+					findPoint = edgeVec[0].VertexVec[0];
+				}
+				else
+				{
+					findPoint = edgeVec[e].VertexVec[(id + 1) % 2];
+				}
+
+				std::swap(edgeVec[e], edgeVec.back());
+				edgeVec.pop_back();
+			}
+		}
+	}
+
+	outPolygon.FaceVec.push_back(closeFace);
+
+	return outPolygon;
 }
 
 VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon)
@@ -594,4 +747,46 @@ std::size_t VMACH::PointHash::operator()(const ConvexHullVertex& point) const
 	sz = std::to_string(point.z);
 	
 	return std::hash<std::string>{}(sx + sy + sz);
+}
+
+VMACH::Polygon3D VMACH::GetBoxPolygon()
+{
+	Polygon3D boxPolygon = Polygon3D
+	({
+		PolygonFace
+		({
+			Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
+			Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
+		}),
+		PolygonFace
+		({
+			Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
+			Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
+		}),
+		PolygonFace
+		({
+			Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+			Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
+		}),
+		PolygonFace
+		({
+			Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
+			Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
+		}),
+		PolygonFace
+		({
+			Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
+			Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
+		}),
+		PolygonFace
+		({
+			Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
+			Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
+		})
+	});
+
+	for (int f = 0; f < boxPolygon.FaceVec.size(); f++)
+		boxPolygon.FaceVec[f].Rewind();
+
+	return boxPolygon;
 }

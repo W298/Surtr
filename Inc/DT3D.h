@@ -203,7 +203,8 @@ namespace DT3D
 			std::vector<Tetrahedron> tmps;
 			for (auto const& tet : dt.TetVec)
 			{
-				/* Check if the point is inside the tetrahedron circumsphere. */
+				// #CORRECTION
+				// Check if the point is inside the tetrahedron circumsphere.
 				const auto dist = Vector3::Distance(tet.sphere.center, pt);
 				if ((dist - tet.sphere.radius) <= EPSILON)
 				{
@@ -218,7 +219,7 @@ namespace DT3D
 				}
 			}
 
-			/* Delete duplicate faces. */
+			// Delete duplicate faces.
 			std::vector<bool> remove(faces.size(), false);
 			for (auto it1 = faces.begin(); it1 != faces.end(); ++it1)
 			{
@@ -237,14 +238,14 @@ namespace DT3D
 
 			faces.erase(std::remove_if(faces.begin(), faces.end(), [&](auto const& f) { return remove[&f - &faces[0]]; }), faces.end());
 
-			/* Update triangulation. */
+			// Update triangulation.
 			for (auto const& f : faces)
 				tmps.emplace_back(f.p0, f.p1, f.p2, pt);
 
 			dt.TetVec = tmps;
 		}
 
-		/* Remove original super triangle. */
+		// Remove original super triangle.
 		dt.TetVec.erase(std::remove_if(dt.TetVec.begin(), dt.TetVec.end(),
 			[&](auto const& tet)
 			{
@@ -254,7 +255,7 @@ namespace DT3D
 						(tet.p0 == p3 || tet.p1 == p3 || tet.p2 == p3 || tet.p3 == p3));
 			}), dt.TetVec.end());
 
-		/* Add faces. */
+		// Add faces.
 		for (auto const& tet : dt.TetVec)
 		{
 			dt.FaceVec.push_back(tet.t0);
