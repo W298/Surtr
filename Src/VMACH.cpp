@@ -11,8 +11,7 @@ bool VMACH::PolygonFace::operator==(const PolygonFace& other)
 
 	for (int i = 0; i < VertexVec.size(); i++)
 	{
-		bool match = other.VertexVec.end() != std::find(other.VertexVec.begin(), other.VertexVec.end(), VertexVec[i]);
-		if (FALSE == match)
+		if (other.VertexVec.end() == std::find_if(other.VertexVec.begin(), other.VertexVec.end(), [&](const Vector3& v) { return NearlyEqual(v, VertexVec[i]); }));
 			return false;
 	}
 
@@ -27,16 +26,25 @@ bool VMACH::PolygonFace::IsEmpty() const
 double VMACH::PolygonFace::CalcDistanceToPoint(const Vector3& point) const
 {
 	Vector3 n = FacePlane.Normal();
-	double nx = n.x;
-	double ny = n.y;
-	double nz = n.z;
-	double w = FacePlane.w;
-	return nx * point.x + ny * point.y + nz * point.z + w;
+	n.Normalize();
+
+	return n.Dot(point) + (double)FacePlane.w;
 }
 
 Vector3 VMACH::PolygonFace::GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const
 {
-	return p1 + (p2 - p1) * (-CalcDistanceToPoint(p1) / FacePlane.Normal().Dot(p2 - p1));
+	Vector3 n = FacePlane.Normal();
+	n.Normalize();
+
+	// Ensure calculation order.
+	std::hash<std::string> sHash;
+	size_t h1 = sHash(std::to_string(p1.x) + std::to_string(p1.y) + std::to_string(p1.z));
+	size_t h2 = sHash(std::to_string(p2.x) + std::to_string(p2.y) + std::to_string(p2.z));
+
+	const Vector3 v1 = (h1 < h2) ? p1 : p2;
+	const Vector3 v2 = (h1 < h2) ? p2 : p1;
+
+	return v1 + (v2 - v1) * (-CalcDistanceToPoint(v1) / n.Dot(v2 - v1));
 }
 
 Vector3 VMACH::PolygonFace::GetCentriod() const
@@ -51,32 +59,113 @@ Vector3 VMACH::PolygonFace::GetCentriod() const
 
 void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
 {
-	Vector3 anchor = VertexVec[0];
-	for (int v = 1; v < VertexVec.size() - 1; v++)
+	if (TRUE == GuaranteeConvex)
 	{
-		Vector3 a = VertexVec[v];
-		Vector3 b = VertexVec[v + 1];
+		// If current polygon is always convex, do fan triangulization.
+		Vector3 anchor = VertexVec[0];
+		for (int v = 1; v < VertexVec.size() - 1; v++)
+		{
+			Vector3 a = VertexVec[v];
+			Vector3 b = VertexVec[v + 1];
 
-		vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
-		vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
-		vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));
 
-		indexData.push_back(indexData.size());
-		indexData.push_back(indexData.size());
-		indexData.push_back(indexData.size());
+			indexData.push_back(indexData.size());
+			indexData.push_back(indexData.size());
+			indexData.push_back(indexData.size());
+		}
+	}
+	else
+	{
+		// If current polygon can be non-convex, do ear clipping.
+		Vector3 n = FacePlane.Normal();
+		n.Normalize();
+
+		std::vector<int> vertexOrder(VertexVec.size());
+		std::iota(vertexOrder.begin(), vertexOrder.end(), 0);
+
+		std::vector<int> E;
+
+		const auto checkEar = [&]()
+		{
+			for (auto itr = vertexOrder.begin(); itr != vertexOrder.end(); itr++)
+			{
+				int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
+				int cur = *itr;
+				int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
+
+				Vector3 a = VertexVec[prev];
+				Vector3 b = VertexVec[cur];
+				Vector3 c = VertexVec[next];
+
+				// If triangle is not convex, ignore.
+				if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, n) > XM_PI)
+					continue;
+
+				bool pointInsideTri = false;
+
+				for (auto iitr = vertexOrder.begin(); iitr != vertexOrder.end(); iitr++)
+				{
+					if (*iitr == prev || *iitr == cur || *iitr == next)
+						continue;
+
+					Vector3 x = VertexVec[*iitr];
+
+					// Check any point is inside or not.
+					if (GetAngleBetweenTwoVectorsOnPlane(b - a, x - a, n) > XM_PI)
+						continue;
+					if (GetAngleBetweenTwoVectorsOnPlane(c - b, x - b, n) > XM_PI)
+						continue;
+					if (GetAngleBetweenTwoVectorsOnPlane(a - c, x - c, n) > XM_PI)
+						continue;
+
+					pointInsideTri = true;
+					break;
+				}
+
+				if (FALSE == pointInsideTri)
+					E.push_back(cur);
+			}
+		};
+
+		checkEar();
+
+		while (E.size() != 0)
+		{
+			if (vertexOrder.size() == 0)
+				break;
+
+			const auto itr = std::find(vertexOrder.begin(), vertexOrder.end(), E.back());
+
+			int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
+			int cur = *itr;
+			int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
+
+			vertexData.push_back(VertexNormalColor(VertexVec[prev], XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(VertexVec[cur], XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(VertexVec[next], XMFLOAT3(), color));
+
+			indexData.push_back(indexData.size());
+			indexData.push_back(indexData.size());
+			indexData.push_back(indexData.size());
+
+			E.pop_back();
+			vertexOrder.erase(itr);
+
+			checkEar();
+		}
 	}
 }
 
-void VMACH::PolygonFace::AddVertex(Vector3 vertex)
+void VMACH::PolygonFace::AddVertex(const Vector3& newVertex)
 {
 	// #CORRECTION
-	bool notExist = VertexVec.end() == std::find_if(VertexVec.begin(), VertexVec.end(), 
-		[&](const Vector3& v) { return (v - vertex).Length() < VERTEX_EQUAL_EPSILON; });
-	
-	if (FALSE == notExist)
+	if (VertexVec.end() != std::find_if(VertexVec.begin(), VertexVec.end(), [&](const Vector3& v) { return NearlyEqual(v, newVertex); }))
 		return;
 
-	VertexVec.push_back(vertex);
+	VertexVec.push_back(newVertex);
 	if (VertexVec.size() == 3)
 		FacePlane = Plane(VertexVec[0], VertexVec[1], VertexVec[2]);
 }
@@ -95,29 +184,36 @@ void VMACH::PolygonFace::Reorder()
 	Vector3 n = FacePlane.Normal();
 	n.Normalize();
 
-	const auto getAngle = [&](const Vector3& v)
-	{
-		Vector3 v1 = VertexVec[0] - centroid;
-		Vector3 v2 = v - centroid;
-
-		float dot = v1.Dot(v2);
-		float det =
-			v1.x * v2.y * n.z +
-			v2.x * n.y * v1.z +
-			n.x * v1.y * v2.z -
-			v1.z * v2.y * n.x -
-			v2.z * n.y * v1.x -
-			n.z * v1.y * v2.x;
-		float angle = atan2(det, dot);
-		angle = (angle < 0) ? XM_2PI + angle : angle;
-
-		return angle;
-	};
-
-	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b) { return getAngle(a) > getAngle(b); });
+	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b) 
+		{ 
+			return 
+				GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, a - centroid, n) >
+				GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, b - centroid, n);
+		});
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipMeshFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
+bool VMACH::PolygonFace::CheckConvex()
+{
+	Vector3 n = FacePlane.Normal();
+	n.Normalize();
+
+	for (int v = 0; v < VertexVec.size(); v++)
+	{
+		Vector3 a = VertexVec[(v - 1) < 0 ? VertexVec.size() - 1 : (v - 1)];
+		Vector3 b = VertexVec[v];
+		Vector3 c = VertexVec[(v + 1) % VertexVec.size()];
+
+		if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, n) > XM_PI)
+		{
+			GuaranteeConvex = false;
+			break;
+		}
+	}
+
+	return GuaranteeConvex;
+}
+
+VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
 {
 	PolygonFace	workingFace;
 	PolygonEdge clippedEdge;
@@ -168,53 +264,6 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipMeshFace(const PolygonFace& inFace, c
 	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace();
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<Vector3>& intersectPointVec)
-{
-	PolygonFace	workingFace;
-
-	for (int i = 0; i < inFace.VertexVec.size(); i++)
-	{
-		Vector3 point1 = inFace.VertexVec[i];
-		Vector3 point2 = inFace.VertexVec[(i + 1) % inFace.VertexVec.size()];
-
-		// (-) distance = inside polygon (plane).
-		// (+) distance = outside polygon (plane).
-		double d1 = clippingFace.CalcDistanceToPoint(point1);
-		double d2 = clippingFace.CalcDistanceToPoint(point2);
-
-		// #CORRECTION
-		// IN, IN
-		if (d1 <= +EPSILON && d2 <= +EPSILON)
-		{
-			workingFace.AddVertex(point2);
-		}
-		// IN, OUT
-		else if (d1 <= +EPSILON && d2 > -EPSILON)
-		{
-			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
-			intersectPointVec.push_back(intersection);
-			
-			workingFace.AddVertex(intersection);
-		}
-		// OUT, OUT
-		else if (d1 > -EPSILON && d2 > -EPSILON)
-		{
-			continue;
-		}
-		// OUT, IN
-		else
-		{
-			Vector3 intersection = clippingFace.GetIntersectionPoint(point1, point2);
-			intersectPointVec.push_back(intersection);
-
-			workingFace.AddVertex(intersection);
-			workingFace.AddVertex(point2);
-		}
-	}
-
-	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace();
-}
-
 Vector3 VMACH::Polygon3D::GetCentroid() const
 {
 	Vector3 centroid(0, 0, 0);
@@ -242,6 +291,14 @@ void VMACH::Polygon3D::Render(std::vector<VertexNormalColor>& vertexData, std::v
 		FaceVec[f].Render(vertexData, indexData, color);
 }
 
+void VMACH::Polygon3D::AddFace(const PolygonFace& newFace)
+{
+	if (TRUE == GuaranteeConvex && FALSE == newFace.GuaranteeConvex)
+		GuaranteeConvex = FALSE;
+	
+	FaceVec.push_back(newFace);
+}
+
 void VMACH::Polygon3D::Translate(const Vector3& vector)
 {
 	for (int f = 0; f < FaceVec.size(); f++)
@@ -263,165 +320,106 @@ void VMACH::Polygon3D::Scale(const Vector3& vector)
 			FaceVec[f].VertexVec[v] *= vector;
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipMesh(const Polygon3D& mesh, const Polygon3D& clippingPolygon)
-{
-	Polygon3D outMesh = mesh;
-
-	// Clip polygon for each faces from clipping polygon.
-	for (int i = 0; i < clippingPolygon.FaceVec.size(); i++)
-		outMesh = ClipMeshFace(outMesh, clippingPolygon.FaceVec[i]);
-
-	return outMesh;
-}
-
-VMACH::Polygon3D VMACH::Polygon3D::ClipMeshFace(const Polygon3D& mesh, const PolygonFace& clippingFace)
+VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
 {
 	std::vector<PolygonEdge> edgeVec;
 
 	// Clip Polygon3D
 	Polygon3D outPolygon;
-	for (int i = 0; i < mesh.FaceVec.size(); i++)
+	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
-		PolygonFace clippedFace = PolygonFace::ClipMeshFace(mesh.FaceVec[i], clippingFace, edgeVec);
+		PolygonFace clippedFace = PolygonFace::ClipFace(inPolygon.FaceVec[i], clippingFace, edgeVec);
 		if (FALSE == clippedFace.IsEmpty())
-			outPolygon.FaceVec.push_back(clippedFace);
+			outPolygon.AddFace(clippedFace);
 	}
 
 	if (edgeVec.size() < 3)
 		return outPolygon;
 
-	PolygonFace closeFace;
-	closeFace.AddVertex(edgeVec[0].VertexVec[0]);
-	closeFace.AddVertex(edgeVec[0].VertexVec[1]);
+	Vector3 cn = clippingFace.FacePlane.Normal();
+	cn.Normalize();
 
-	Vector3 findPoint = edgeVec[0].VertexVec[1];
-
-	std::swap(edgeVec[0], edgeVec.back());
-	edgeVec.pop_back();
-
-	while (edgeVec.size() != 0)
+	const auto extractFace = [&]() 
 	{
-		for (int e = 0; e < edgeVec.size(); e++)
+		PolygonFace closeFace;
+		closeFace.AddVertex(edgeVec[0].VertexVec[0]);
+		closeFace.AddVertex(edgeVec[0].VertexVec[1]);
+
+		Vector3 findPoint = edgeVec[0].VertexVec[1];
+
+		std::swap(edgeVec[0], edgeVec.back());
+		edgeVec.pop_back();
+
+		bool polygonClosed = false;
+		while (TRUE)
 		{
-			int id = -1;
-			for (int v = 0; v < 2; v++)
+			bool err = true;
+			for (int e = 0; e < edgeVec.size(); e++)
 			{
-				if ((edgeVec[e].VertexVec[v] - findPoint).Length() < VERTEX_EQUAL_EPSILON)
+				int id = -1;
+				for (int v = 0; v < 2; v++)
 				{
-					id = v;
+					if (TRUE == NearlyEqual(edgeVec[e].VertexVec[v], findPoint))
+					{
+						id = v;
+						break;
+					}
+				}
+
+				if (id != -1)
+				{
+					err = false;
+					Vector3 connectedVertex = edgeVec[e].VertexVec[(id + 1) % 2];
+
+					// Polygon closed.
+					if (NearlyEqual(connectedVertex, closeFace.VertexVec.front()))
+					{
+						std::swap(edgeVec[e], edgeVec.back());
+						edgeVec.pop_back();
+
+						polygonClosed = true;
+						break;
+					}
+
+					closeFace.AddVertex(connectedVertex);
+
+					if (closeFace.VertexVec.size() == 3)
+					{
+						Vector3 n = closeFace.FacePlane.Normal();
+						n.Normalize();
+
+						if (n.Dot(cn) <= 0)
+							closeFace.Rewind();
+					}
+
+					findPoint = closeFace.VertexVec.back();
+
+					std::swap(edgeVec[e], edgeVec.back());
+					edgeVec.pop_back();
+
 					break;
 				}
 			}
 
-			if (id != -1)
-			{
-				closeFace.AddVertex(edgeVec[e].VertexVec[(id + 1) % 2]);
-				
-				if (closeFace.VertexVec.size() == 3 &&
-					closeFace.FacePlane.Normal().Dot(clippingFace.FacePlane.Normal()) <= 0)
-				{
-					closeFace.Rewind();
-				}
+			// #TEMP ignore error faces.
+			if (TRUE == err)
+				return;
 
-				findPoint = closeFace.VertexVec.back();
-
-				std::swap(edgeVec[e], edgeVec.back());
-				edgeVec.pop_back();
-
+			if (TRUE == polygonClosed)
 				break;
-			}
 		}
-	}
 
-	Vector3 n = closeFace.FacePlane.Normal();
-	n.Normalize();
-
-	std::vector<int> vertexOrder;
-	for (int i = 0; i < closeFace.VertexVec.size(); i++)
-		vertexOrder.push_back(i);
-
-	std::vector<int> E;
-
-	const auto checkEar = [&]()
-	{
-		for (auto itr = vertexOrder.begin(); itr != vertexOrder.end(); itr++)
+		if (FALSE == inPolygon.GuaranteeConvex)
 		{
-			int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
-			int cur = *itr;
-			int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
-
-			Vector3 a = closeFace.VertexVec[prev];
-			Vector3 b = closeFace.VertexVec[cur];
-			Vector3 c = closeFace.VertexVec[next];
-
-			const auto getAngle = [&](const Vector3& v1, const Vector3& v2)
-			{
-				float dot = v1.Dot(v2);
-				float det = Matrix(v1, v2, n).Determinant();
-
-				float angle = atan2(det, dot);
-				angle = (angle < 0) ? XM_2PI + angle : angle;
-
-				return angle;
-			};
-
-			auto abc = getAngle(b - a, c - a);
-			if (abc > XM_PI)
-				continue;
-
-			bool pointInsideTri = false;
-			for (int j = 0; j < closeFace.VertexVec.size(); j++)
-			{
-				if (j == prev || j == cur || j == next)
-					continue;
-
-				Vector3 x = closeFace.VertexVec[j];
-
-				auto ab = getAngle(b - a, x - a);
-				if (ab > XM_PI)
-					continue;
-
-				auto bc = getAngle(c - b, x - b);
-				if (bc > XM_PI)
-					continue;
-
-				auto ca = getAngle(a - c, x - c);
-				if (ca > XM_PI)
-					continue;
-
-				pointInsideTri = true;
-				break;
-			}
-
-			if (FALSE == pointInsideTri)
-				E.push_back(cur);
+			// Check closing face is convex or not.
+			closeFace.CheckConvex();
 		}
+
+		outPolygon.AddFace(closeFace);
 	};
 
-	checkEar();
+	extractFace();
 
-	std::vector<PolygonFace> earFaceVec;
-	while (E.size() != 0)
-	{
-		if (vertexOrder.size() == 0)
-			break;
-
-		const auto itr = std::find(vertexOrder.begin(), vertexOrder.end(), E.back());
-
-		int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
-		int cur = *itr;
-		int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
-
-		PolygonFace earFace({ closeFace.VertexVec[prev], closeFace.VertexVec[cur], closeFace.VertexVec[next] });
-		earFaceVec.push_back(earFace);
-
-		E.pop_back();
-		vertexOrder.erase(itr);
-
-		checkEar();
-	}
-
-	outPolygon.FaceVec.insert(outPolygon.FaceVec.begin(), earFaceVec.begin(), earFaceVec.end());
 	return outPolygon;
 }
 
@@ -433,55 +431,6 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(const Polygon3D& inPolygon, const
 	for (int i = 0; i < clippingPolygon.FaceVec.size(); i++)
 		outPolygon = ClipFace(outPolygon, clippingPolygon.FaceVec[i]);
 
-	return outPolygon;
-}
-
-VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
-{
-	std::vector<Vector3> intersectPointVec;
-
-	// Clip Polygon3D
-	Polygon3D outPolygon;
-	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
-	{
-		PolygonFace clippedFace = PolygonFace::ClipFace(inPolygon.FaceVec[i], clippingFace, intersectPointVec);
-		if (FALSE == clippedFace.IsEmpty())
-			outPolygon.FaceVec.push_back(clippedFace);
-	}
-
-	if (intersectPointVec.size() < 3)
-		return outPolygon;
-
-	// Calculate sector of clippingFace.
-	Vector3 centroid(0, 0, 0);
-	for (int i = 0; i < intersectPointVec.size(); i++)
-		centroid += intersectPointVec[i];
-	centroid /= intersectPointVec.size();
-	centroid += Vector3(EPSILON, EPSILON, EPSILON);
-
-	Vector3 n = -clippingFace.FacePlane.Normal();
-	n.Normalize();
-
-	const auto getAngle = [&](const Vector3& v)
-	{
-		Vector3 v1 = intersectPointVec[0] - centroid;
-		Vector3 v2 = v - centroid;
-
-		float dot = v1.Dot(v2);
-		float det = Matrix(v1, v2, n).Determinant();
-		float angle = atan2(det, dot);
-		angle = (angle < 0) ? XM_2PI + angle : angle;
-
-		return angle;
-	};
-
-	std::sort(intersectPointVec.begin() + 1, intersectPointVec.end(), [&](const Vector3& a, const Vector3& b) { return getAngle(a) > getAngle(b); });
-
-	PolygonFace face;
-	for (int i = 0; i < intersectPointVec.size(); i++)
-		face.AddVertex(intersectPointVec[i]);
-
-	outPolygon.FaceVec.push_back(face);
 	return outPolygon;
 }
 
@@ -559,8 +508,11 @@ float VMACH::ConvexHull::Volume(const ConvexHullFace& face, const ConvexHullVert
 
 size_t VMACH::ConvexHull::Key2Edge(const ConvexHullVertex& p1, const ConvexHullVertex& p2)
 {
-	PointHash ph;
-	return ph(p1) ^ ph(p2);
+	std::hash<std::string> sHash;
+	size_t h1 = sHash(std::to_string(p1.x) + std::to_string(p1.y) + std::to_string(p1.z));
+	size_t h2 = sHash(std::to_string(p2.x) + std::to_string(p2.y) + std::to_string(p2.z));
+
+	return h1 ^ h2;
 }
 
 VMACH::ConvexHullVertex VMACH::ConvexHull::FindInnerPoint(const ConvexHullFace* face, const ConvexHullEdge& edge)
@@ -819,14 +771,9 @@ void VMACH::ConvexHullEdge::EraseFace(ConvexHullFace* face)
 	(Face1 == face ? Face1 : Face2) = nullptr;
 }
 
-std::size_t VMACH::PointHash::operator()(const ConvexHullVertex& point) const
+bool VMACH::NearlyEqual(const Vector3& v1, const Vector3& v2)
 {
-	std::string sx, sy, sz;
-	sx = std::to_string(point.x);
-	sy = std::to_string(point.y);
-	sz = std::to_string(point.z);
-	
-	return std::hash<std::string>{}(sx + sy + sz);
+	return (v1 - v2).Length() < EPSILON;
 }
 
 VMACH::Polygon3D VMACH::GetBoxPolygon()
@@ -869,4 +816,21 @@ VMACH::Polygon3D VMACH::GetBoxPolygon()
 		boxPolygon.FaceVec[f].Rewind();
 
 	return boxPolygon;
+}
+
+float VMACH::GetAngleBetweenTwoVectorsOnPlane(const Vector3& v1, const Vector3& v2, const Vector3& n)
+{
+	float dot = v1.Dot(v2);
+	float det =
+		v1.x * v2.y * n.z +
+		v2.x * n.y * v1.z +
+		n.x * v1.y * v2.z -
+		v1.z * v2.y * n.x -
+		v2.z * n.y * v1.x -
+		n.z * v1.y * v2.x;
+
+	float angle = atan2(det, dot);
+	angle = (angle < 0) ? XM_2PI + angle : angle;
+
+	return angle;
 }

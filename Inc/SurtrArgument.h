@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SURTUR_ARGUMENT_H
+#define SURTUR_ARGUMENT_H
 
 constexpr UINT MIN_SUB_DIVIDE_COUNT = 7u;
 constexpr UINT MAX_SUB_DIVIDE_COUNT = 9u;
@@ -52,3 +53,5 @@ SurtrArgument CollectSurtrArgument()
 
     return arguments;
 }
+
+#endif

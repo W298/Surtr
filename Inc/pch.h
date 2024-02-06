@@ -16,7 +16,6 @@
 #define WIN32_LEAN_AND_MEAN
 
 #define EPSILON 1e-12
-#define VERTEX_EQUAL_EPSILON 1e-4
 
 #include <Windows.h>
 
@@ -49,6 +48,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <numeric>
 #include <windowsx.h>
 
 #ifdef _DEBUG

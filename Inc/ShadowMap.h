@@ -1,4 +1,5 @@
-#pragma once
+#ifndef SHADOW_MAP_H
+#define SHADOW_MAP_H
 
 class ShadowMap
 {
@@ -47,3 +48,4 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12Resource> m_shadowMapResource = nullptr;
 };
 
+#endif

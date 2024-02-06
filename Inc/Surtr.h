@@ -42,33 +42,33 @@ private:
 
     struct OpaqueCB
     {
-        DirectX::XMMATRIX   worldMatrix;
-        DirectX::XMMATRIX   viewProjMatrix;
-        DirectX::XMFLOAT4   cameraPosition;
-        DirectX::XMFLOAT4   lightDirection;
-        DirectX::XMFLOAT4   lightColor;
-        DirectX::XMMATRIX   shadowTransform;
-        uint8_t             padding[16];
+        DirectX::XMMATRIX   WorldMatrix;
+        DirectX::XMMATRIX   ViewProjMatrix;
+        DirectX::XMFLOAT4   CameraPosition;
+        DirectX::XMFLOAT4   LightDirection;
+        DirectX::XMFLOAT4   LightColor;
+        DirectX::XMMATRIX   ShadowTransform;
+        uint8_t             Padding[16];
     };
 
     struct ShadowCB
     {
-        DirectX::XMMATRIX   lightWorldMatrix;
-        DirectX::XMMATRIX   lightViewProjMatrix;
-        DirectX::XMVECTOR   cameraPosition;
-        uint8_t             padding[104];
+        DirectX::XMMATRIX   LightWorldMatrix;
+        DirectX::XMMATRIX   LightViewProjMatrix;
+        DirectX::XMVECTOR   CameraPosition;
+        uint8_t             Padding[104];
     };
 
 	struct DecompositionArgument
 	{
-		INT                 ichIncludePointLimit = 100;
-		FLOAT               achPlaneGapInverse = 1000.0f;
+		INT                 ICHIncludePointLimit = 100;
+		FLOAT               ACHPlaneGapInverse = 1000.0f;
 	};
 
 	struct DecompositionResult
 	{
-		UINT                ichFaceCnt = 0;
-		UINT                achErrorPointCnt = 0;
+		UINT                ICHFaceCnt = 0;
+		UINT                ACHErrorPointCnt = 0;
 	};
 
     void Update(DX::StepTimer const& timer);

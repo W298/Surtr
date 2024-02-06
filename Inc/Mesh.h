@@ -1,15 +1,16 @@
-#pragma once
+#ifndef MESH_H
+#define MESH_H
 
 struct VertexNormalColor
 {
-	DirectX::XMFLOAT3	position;
-	DirectX::XMFLOAT3	normal;
-	DirectX::XMFLOAT3   color;
+	DirectX::XMFLOAT3	Position;
+	DirectX::XMFLOAT3	Normal;
+	DirectX::XMFLOAT3   Color;
 
 	explicit VertexNormalColor(
-		const DirectX::XMFLOAT3 position = DirectX::XMFLOAT3(0, 0, 0),
-		const DirectX::XMFLOAT3 normal   = DirectX::XMFLOAT3(0, 0, 0),
-		const DirectX::XMFLOAT3 color    = DirectX::XMFLOAT3(0.25f, 0.25f, 0.25f)) : position(position), normal(normal), color(color) {}
+		const DirectX::XMFLOAT3 _position = DirectX::XMFLOAT3(0, 0, 0),
+		const DirectX::XMFLOAT3 _normal   = DirectX::XMFLOAT3(0, 0, 0),
+		const DirectX::XMFLOAT3 _color    = DirectX::XMFLOAT3(0.25f, 0.25f, 0.25f)) : Position(_position), Normal(_normal), Color(_color) {}
 };
 
 struct Mesh
@@ -54,3 +55,5 @@ public:
 		commandList->DrawIndexedInstanced(IndexCount, 1, 0, 0, 0);
 	}
 };
+
+#endif
