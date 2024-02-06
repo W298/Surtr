@@ -1670,11 +1670,11 @@ void Surtr::CreateACH(
 		meshPolygon.FaceVec.push_back(face);
 	}
 
-    const auto clippedMesh = VMACH::Polygon3D::ClipMeshFace(
-        meshPolygon, 
-        VMACH::PolygonFace({ Vector3(100, 3, -100), Vector3(-100, 3, -100), Vector3(-100, 3, 100), Vector3(100, 3, 100) }));
-    
-    clippedMesh.Render(achVertexData, achIndexData);
+	const auto clippedMesh = VMACH::Polygon3D::ClipMeshFace(
+		meshPolygon,
+		VMACH::PolygonFace({ Vector3(100, 7, -100), Vector3(-100, 7, -100), Vector3(-100, 7, 100), Vector3(100, 7, 100) }));
+
+	clippedMesh.Render(achVertexData, achIndexData);
 
     return;
 
