@@ -23,18 +23,44 @@ bool VMACH::PolygonFace::IsEmpty() const
 	return VertexVec.size() == 0;
 }
 
+bool VMACH::PolygonFace::IsCCW(const Vector3& normal) const
+{
+	Vector3 P = VertexVec[0];
+	Vector3 S;
+	
+	for (int v = 0; v < VertexVec.size(); v++)
+		S += 0.5f * (VertexVec[v] - P).Cross(VertexVec[(v + 1) % VertexVec.size()] - P);
+
+	return S.Dot(normal) < 0;
+}
+
+bool VMACH::PolygonFace::IsConvex(const Vector3& normal) const
+{
+	for (int v = 0; v < VertexVec.size(); v++)
+	{
+		Vector3 a = VertexVec[(v - 1) < 0 ? VertexVec.size() - 1 : (v - 1)];
+		Vector3 b = VertexVec[v];
+		Vector3 c = VertexVec[(v + 1) % VertexVec.size()];
+
+		if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, normal) > XM_PI)
+		{
+			return false;
+			break;
+		}
+	}
+
+	return true;
+}
+
 double VMACH::PolygonFace::CalcDistanceToPoint(const Vector3& point) const
 {
-	Vector3 n = FacePlane.Normal();
-	n.Normalize();
-
-	return n.Dot(point) + (double)FacePlane.w;
+	Vector3 n = GetNormal();
+	return n.Dot(point) + (double)FacePlane->w;
 }
 
 Vector3 VMACH::PolygonFace::GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const
 {
-	Vector3 n = FacePlane.Normal();
-	n.Normalize();
+	Vector3 n = GetNormal();
 
 	// Ensure calculation order.
 	std::hash<std::string> sHash;
@@ -55,6 +81,17 @@ Vector3 VMACH::PolygonFace::GetCentriod() const
 	centroid /= VertexVec.size();
 
 	return centroid;
+}
+
+VMACH::Vector3 VMACH::PolygonFace::GetNormal() const
+{
+	if (FacePlane == nullptr)
+		throw std::exception();
+
+	Vector3 n = FacePlane->Normal();
+	n.Normalize();
+
+	return n;
 }
 
 void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
@@ -80,13 +117,12 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 	else
 	{
 		// If current polygon can be non-convex, do ear clipping.
-		Vector3 n = FacePlane.Normal();
-		n.Normalize();
+		Vector3 n = GetNormal();
 
 		std::vector<int> vertexOrder(VertexVec.size());
 		std::iota(vertexOrder.begin(), vertexOrder.end(), 0);
 
-		std::vector<int> E;
+		std::unordered_set<int> E;
 
 		const auto checkEar = [&]()
 		{
@@ -126,7 +162,7 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 				}
 
 				if (FALSE == pointInsideTri)
-					E.push_back(cur);
+					E.insert(cur);
 			}
 		};
 
@@ -137,7 +173,9 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 			if (vertexOrder.size() == 0)
 				break;
 
-			const auto itr = std::find(vertexOrder.begin(), vertexOrder.end(), E.back());
+			const auto itr = std::find(vertexOrder.begin(), vertexOrder.end(), *E.begin());
+			if (itr == vertexOrder.end())
+				throw std::exception();
 
 			int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
 			int cur = *itr;
@@ -151,7 +189,7 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
 
-			E.pop_back();
+			E.erase(E.begin());
 			vertexOrder.erase(itr);
 
 			checkEar();
@@ -166,23 +204,36 @@ void VMACH::PolygonFace::AddVertex(const Vector3& newVertex)
 		return;
 
 	VertexVec.push_back(newVertex);
-	if (VertexVec.size() == 3)
-		FacePlane = Plane(VertexVec[0], VertexVec[1], VertexVec[2]);
+	
+	if (TRUE == GuaranteeConvex && VertexVec.size() == 3)
+		ConstructFacePlane();
+}
+
+void VMACH::PolygonFace::ConstructFacePlane()
+{
+	// Construct face plane only if convex is guranteed and at least 3 vertices exists.
+	if (TRUE == GuaranteeConvex && VertexVec.size() >= 3)
+		FacePlane = std::make_unique<Plane>(VertexVec[0], VertexVec[1], VertexVec[2]);
+}
+
+void VMACH::PolygonFace::ManuallySetFacePlane(const Plane& plane)
+{
+	FacePlane = std::make_unique<Plane>(plane);
 }
 
 void VMACH::PolygonFace::Rewind()
 {
 	std::reverse(VertexVec.begin(), VertexVec.end());
-	FacePlane = Plane(VertexVec[0], VertexVec[1], VertexVec[2]);
+	ConstructFacePlane();
 }
 
-void VMACH::PolygonFace::Reorder()
+void VMACH::PolygonFace::__Reorder()
 {
+	// Depreciated. Need re-implementation.
 	Vector3 centroid = GetCentriod();
 	centroid += Vector3(EPSILON, EPSILON, EPSILON);
 
-	Vector3 n = FacePlane.Normal();
-	n.Normalize();
+	Vector3 n = GetNormal();
 
 	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b) 
 		{ 
@@ -192,30 +243,14 @@ void VMACH::PolygonFace::Reorder()
 		});
 }
 
-bool VMACH::PolygonFace::CheckConvex()
-{
-	Vector3 n = FacePlane.Normal();
-	n.Normalize();
-
-	for (int v = 0; v < VertexVec.size(); v++)
-	{
-		Vector3 a = VertexVec[(v - 1) < 0 ? VertexVec.size() - 1 : (v - 1)];
-		Vector3 b = VertexVec[v];
-		Vector3 c = VertexVec[(v + 1) % VertexVec.size()];
-
-		if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, n) > XM_PI)
-		{
-			GuaranteeConvex = false;
-			break;
-		}
-	}
-
-	return GuaranteeConvex;
-}
-
 VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
 {
-	PolygonFace	workingFace;
+	PolygonFace	workingFace = { inFace.GuaranteeConvex };
+	
+	// If face is non-convex, face plane is not constructed automatically.
+	if (FALSE == workingFace.GuaranteeConvex)
+		workingFace.ManuallySetFacePlane(*clippingFace.FacePlane);
+
 	PolygonEdge clippedEdge;
 
 	for (int i = 0; i < inFace.VertexVec.size(); i++)
@@ -261,7 +296,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const
 	if (clippedEdge.VertexVec.size() == 2)
 		edgeVec.push_back(clippedEdge);
 
-	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace();
+	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace(inFace.GuaranteeConvex);
 }
 
 Vector3 VMACH::Polygon3D::GetCentroid() const
@@ -325,7 +360,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 	std::vector<PolygonEdge> edgeVec;
 
 	// Clip Polygon3D
-	Polygon3D outPolygon;
+	Polygon3D outPolygon = { inPolygon.GuaranteeConvex };
 	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
 		PolygonFace clippedFace = PolygonFace::ClipFace(inPolygon.FaceVec[i], clippingFace, edgeVec);
@@ -336,12 +371,13 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 	if (edgeVec.size() < 3)
 		return outPolygon;
 
-	Vector3 cn = clippingFace.FacePlane.Normal();
-	cn.Normalize();
+	Vector3 cn = clippingFace.GetNormal();
 
 	const auto extractFace = [&]() 
 	{
-		PolygonFace closeFace;
+		// Closing face can be non-convex when inPolygon is not guranteed.
+		PolygonFace closeFace = { inPolygon.GuaranteeConvex };
+
 		closeFace.AddVertex(edgeVec[0].VertexVec[0]);
 		closeFace.AddVertex(edgeVec[0].VertexVec[1]);
 
@@ -382,17 +418,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 					}
 
 					closeFace.AddVertex(connectedVertex);
-
-					if (closeFace.VertexVec.size() == 3)
-					{
-						Vector3 n = closeFace.FacePlane.Normal();
-						n.Normalize();
-
-						if (n.Dot(cn) <= 0)
-							closeFace.Rewind();
-					}
-
-					findPoint = closeFace.VertexVec.back();
+					findPoint = connectedVertex;
 
 					std::swap(edgeVec[e], edgeVec.back());
 					edgeVec.pop_back();
@@ -401,7 +427,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 				}
 			}
 
-			// #TEMP ignore error faces.
+			// #TEST ignore error faces.
 			if (TRUE == err)
 				return;
 
@@ -409,16 +435,25 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 				break;
 		}
 
-		if (FALSE == inPolygon.GuaranteeConvex)
+		
+		// Check closing face is CCW or CW.
+		if (closeFace.IsCCW(cn))
+			closeFace.Rewind();
+
+		// Set face plane if convex is not guranteed.
+		// Check closing face is really non-convex or not.
+		if (FALSE == closeFace.GuaranteeConvex)
 		{
-			// Check closing face is convex or not.
-			closeFace.CheckConvex();
+			closeFace.ManuallySetFacePlane(*clippingFace.FacePlane);
+			closeFace.GuaranteeConvex = closeFace.IsConvex(cn);
 		}
 
 		outPolygon.AddFace(closeFace);
 	};
 
-	extractFace();
+	// #TEST
+	while (edgeVec.size() != 0)
+		extractFace();
 
 	return outPolygon;
 }
@@ -778,35 +813,35 @@ bool VMACH::NearlyEqual(const Vector3& v1, const Vector3& v2)
 
 VMACH::Polygon3D VMACH::GetBoxPolygon()
 {
-	Polygon3D boxPolygon = Polygon3D
-	({
-		PolygonFace
-		({
+	Polygon3D boxPolygon(true, 
+	{
+		PolygonFace(true, 
+		{
 			Vector3(+0.5f, -0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f),
 			Vector3(-0.5f, +0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
 		}),
-		PolygonFace
-		({
+		PolygonFace(true,
+		{
 			Vector3(+0.5f, -0.5f, +0.5f), Vector3(+0.5f, +0.5f, +0.5f),
 			Vector3(+0.5f, +0.5f, -0.5f), Vector3(+0.5f, -0.5f, -0.5f)
 		}),
-		PolygonFace
-		({
+		PolygonFace(true,
+		{
 			Vector3(-0.5f, -0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
 			Vector3(+0.5f, +0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f)
 		}),
-		PolygonFace
-		({
+		PolygonFace(true,
+		{
 			Vector3(-0.5f, -0.5f, -0.5f), Vector3(-0.5f, +0.5f, -0.5f),
 			Vector3(-0.5f, +0.5f, +0.5f), Vector3(-0.5f, -0.5f, +0.5f)
 		}),
-		PolygonFace
-		({
+		PolygonFace(true,
+		{
 			Vector3(+0.5f, +0.5f, +0.5f), Vector3(-0.5f, +0.5f, +0.5f),
 			Vector3(-0.5f, +0.5f, -0.5f), Vector3(+0.5f, +0.5f, -0.5f)
 		}),
-		PolygonFace
-		({
+		PolygonFace(true,
+		{
 			Vector3(-0.5f, -0.5f, +0.5f), Vector3(+0.5f, -0.5f, +0.5f),
 			Vector3(+0.5f, -0.5f, -0.5f), Vector3(-0.5f, -0.5f, -0.5f)
 		})

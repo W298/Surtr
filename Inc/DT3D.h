@@ -309,7 +309,7 @@ namespace DT3D
 		}
 
 		std::vector<DT3D::Edge> uniqueEdgeVec;
-		Unique<DT3D::Edge>(edgeVec, uniqueEdgeVec);
+		UniqueVector<DT3D::Edge>(edgeVec, uniqueEdgeVec);
 
 		return uniqueEdgeVec;
 	}

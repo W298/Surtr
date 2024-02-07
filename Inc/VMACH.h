@@ -13,24 +13,45 @@ namespace VMACH
 		std::vector<Vector3>		VertexVec;
 	};
 
+	// If convex is not guranteed, face plane is NOT automatically generated.
 	struct PolygonFace
 	{
-		std::vector<Vector3>		VertexVec;
-		Plane						FacePlane;
 		bool						GuaranteeConvex;
+		std::vector<Vector3>		VertexVec;
+		std::unique_ptr<Plane>		FacePlane = nullptr;
 
-		PolygonFace() : VertexVec(), FacePlane(), GuaranteeConvex(true) {}
-		PolygonFace(std::vector<Vector3> _vertexVec) : 
-			VertexVec(_vertexVec), 
-			FacePlane(Plane(_vertexVec[0], _vertexVec[1], _vertexVec[2])),
-			GuaranteeConvex(true) {}
+		PolygonFace(bool _guranteeConvex) : GuaranteeConvex(_guranteeConvex), VertexVec() {}
+		PolygonFace(bool _guranteeConvex, std::vector<Vector3> _vertexVec) : 
+			GuaranteeConvex(_guranteeConvex), VertexVec(_vertexVec) { ConstructFacePlane(); }
+		
+		PolygonFace(const PolygonFace& other) : GuaranteeConvex(other.GuaranteeConvex), VertexVec(other.VertexVec)
+		{
+			if (other.FacePlane != nullptr)
+				FacePlane = std::make_unique<Plane>(*other.FacePlane.get());
+		}
+		PolygonFace& operator= (const PolygonFace& other)
+		{
+			GuaranteeConvex = other.GuaranteeConvex;
+			VertexVec = other.VertexVec;
+
+			if (other.FacePlane != nullptr)
+				FacePlane = std::make_unique<Plane>(*other.FacePlane.get());
+		}
+
+		~PolygonFace()
+		{
+			FacePlane.release();
+		}
 
 		bool operator==(const PolygonFace& other);
 
 		bool IsEmpty() const;
+		bool IsCCW(const Vector3& normal) const;
+		bool IsConvex(const Vector3& normal) const;
 		double CalcDistanceToPoint(const Vector3& point) const;
 		Vector3 GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const;
 		Vector3 GetCentriod() const;
+		Vector3 GetNormal() const;
 
 		void Render(
 			std::vector<VertexNormalColor>& vertexData,
@@ -38,23 +59,22 @@ namespace VMACH
 			const Vector3& color = { 0.25f, 0.25f, 0.25f }) const;
 
 		void AddVertex(const Vector3& newVertex);
+		void ConstructFacePlane();
+		void ManuallySetFacePlane(const Plane& plane);
 		
 		void Rewind();
-		void Reorder();
-		bool CheckConvex();
+		void __Reorder();
 
 		static PolygonFace ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec);
 	};
 
 	struct Polygon3D
 	{
-		std::vector<PolygonFace>	FaceVec;
 		bool						GuaranteeConvex;
+		std::vector<PolygonFace>	FaceVec;
 
-		Polygon3D() : FaceVec(), GuaranteeConvex(true) {}
-		Polygon3D(std::vector<PolygonFace> _faceVec) : 
-			FaceVec(_faceVec), 
-			GuaranteeConvex(std::all_of(FaceVec.begin(), FaceVec.end(), [](const PolygonFace& f) { return f.GuaranteeConvex; })) {}
+		Polygon3D(bool _guranteeConvex) : GuaranteeConvex(_guranteeConvex), FaceVec() {}
+		Polygon3D(bool _guranteeConvex, std::vector<PolygonFace> _faceVec) : GuaranteeConvex(_guranteeConvex), FaceVec(_faceVec) {}
 
 		Vector3 GetCentroid() const;
 		bool Contains(const Vector3& point) const;

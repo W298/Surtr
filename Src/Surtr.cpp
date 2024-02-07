@@ -1464,7 +1464,7 @@ void Surtr::CreateACH(
                 const Vector3 startPoint = voronoiEdgeVec[i].p0;
 
                 std::vector<VMACH::PolygonFace> faceVec;
-                VMACH::PolygonFace res;
+                VMACH::PolygonFace res = { true };
                 res.AddVertex(startPoint);
                 loop(faceVec, res, voronoiEdgeVec, startPoint);
 
@@ -1476,7 +1476,7 @@ void Surtr::CreateACH(
                 const Vector3 startPoint = voronoiEdgeVec[i].p1;
 
                 std::vector<VMACH::PolygonFace> faceVec;
-                VMACH::PolygonFace res;
+                VMACH::PolygonFace res = { true };
                 res.AddVertex(startPoint);
                 loop(faceVec, res, voronoiEdgeVec, startPoint);
 
@@ -1484,7 +1484,7 @@ void Surtr::CreateACH(
             }
         }
 
-        Unique<VMACH::PolygonFace>(voronoiFaceVec, uniqueVoronoiFaceVec);
+        UniqueVector<VMACH::PolygonFace>(voronoiFaceVec, uniqueVoronoiFaceVec);
 
         // Render voronoi faces.
         for (int i = 0; i < uniqueVoronoiFaceVec.size(); i++)
@@ -1493,7 +1493,7 @@ void Surtr::CreateACH(
             a = rnd(); b = rnd(); c = rnd();
             XMFLOAT3 color(a, b, c);
 
-            uniqueVoronoiFaceVec[i].Reorder();
+            uniqueVoronoiFaceVec[i].__Reorder();
             uniqueVoronoiFaceVec[i].Render(achVertexData, achIndexData, color);
         }
 
@@ -1608,7 +1608,7 @@ void Surtr::CreateACH(
     // 6. Collect polygon face using ICH face planes.
     const auto collectPolygonFaces = [&](Plane p, Vector3 x)
     {
-		VMACH::PolygonFace cf;
+        VMACH::PolygonFace cf = { true };
 
 		Vector3 n = p.Normal();
 		n.Normalize();
@@ -1631,7 +1631,7 @@ void Surtr::CreateACH(
         return cf;
     };
 
-    VMACH::Polygon3D clippingPolygon;
+    VMACH::Polygon3D clippingPolygon = { true };
     for (int f = 0; f < ichFaceNormalVec.size(); f++)
     {
         clippingPolygon.AddFace(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
@@ -1659,13 +1659,12 @@ void Surtr::CreateACH(
 		boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));
 	}
 
-	// Generate mesh polygon.
-	VMACH::Polygon3D meshPolygon;
-    meshPolygon.GuaranteeConvex = false;
+	// Generate mesh polygon. That can be non-convex.
+    VMACH::Polygon3D meshPolygon = { false };
 
 	for (uint32_t i = 0; i < visualMeshIndices.size(); i += 3)
 	{
-		VMACH::PolygonFace face;
+        VMACH::PolygonFace face = { true };
 		face.AddVertex(visualMeshVertices[visualMeshIndices[i]].Position);
 		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 1]].Position);
 		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 2]].Position);
@@ -1673,10 +1672,11 @@ void Surtr::CreateACH(
 		meshPolygon.AddFace(face);
 	}
 
+    // #TEST
 	/*const auto clippedMesh =
 		VMACH::Polygon3D::ClipFace(
 			meshPolygon,
-			VMACH::PolygonFace({ Vector3(100, 7, -100), Vector3(-100, 7, -100), Vector3(-100, 7, 100), Vector3(100, 7, 100) }));
+			VMACH::PolygonFace(true, { Vector3(100, 10, -100), Vector3(-100, 10, -100), Vector3(-100, 10, 100), Vector3(100, 10, 100) }));
 
 	clippedMesh.Render(achVertexData, achIndexData);
 
@@ -1685,7 +1685,7 @@ void Surtr::CreateACH(
     // 8. Voronoi diagram generation.
     Vector3 voroBBMinVec(minX, minY, minZ);
     Vector3 voroBBMaxVec(maxX, maxY, maxZ);
-    const int cellCount = 48;
+    const int cellCount = 8;
 
 	voro::container voroCon(
         voroBBMinVec.x, voroBBMaxVec.x, 
@@ -1732,12 +1732,12 @@ void Surtr::CreateACH(
 		voroCell.face_vertices(cellFaceVec);
 		voroCell.vertices(x, y, z, cellVertices);
 
-        VMACH::Polygon3D voroPoly;
+        VMACH::Polygon3D voroPoly = { true };
 
         int cur = 0;
         while (cur < cellFaceVec.size())
         {
-            VMACH::PolygonFace face;
+            VMACH::PolygonFace face = { true };
             
             int cnt = cellFaceVec[cur];
             for (int i = 0; i < cnt; i++)
@@ -1835,7 +1835,7 @@ void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMes
 	OutputDebugStringWFormat(L"ACH Time: ");
 	TIMER_STOP_PRINT;
 
-	// #TEST k-DOP.
+	// k-DOP.
 	{
 		// Add out of convex hull point for testing.
 		vertices.emplace_back(-100, -100, -100);

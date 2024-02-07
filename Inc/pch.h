@@ -85,7 +85,7 @@ namespace DX
     }
 }
 
-static void DebugOut(const wchar_t* fmt, ...)
+static void _DebugOut(const wchar_t* fmt, ...)
 {
 	va_list argp;
 	va_start(argp, fmt);
@@ -96,13 +96,13 @@ static void DebugOut(const wchar_t* fmt, ...)
 }
 
 template <typename T>
-static void Unique(const std::vector<T>& dupVec, std::vector<T>& uniqueVec)
+static void UniqueVector(const std::vector<T>& dupVec, std::vector<T>& uniqueVec)
 {
 	std::copy_if(dupVec.begin(), dupVec.end(), std::back_inserter(uniqueVec),
 		[&](const T& e) { return uniqueVec.end() == std::find(uniqueVec.begin(), uniqueVec.end(), e); });
 }
 
-#define OutputDebugStringWFormat(fmt, ...) DebugOut(fmt, __VA_ARGS__);
+#define OutputDebugStringWFormat(fmt, ...) _DebugOut(fmt, __VA_ARGS__);
 
 #define TIMER_INIT \
     LARGE_INTEGER freq; \
