@@ -29,7 +29,7 @@ bool VMACH::PolygonFace::IsCCW(const Vector3& normal) const
 	Vector3 S;
 	
 	for (int v = 0; v < VertexVec.size(); v++)
-		S += 0.5f * (VertexVec[v] - P).Cross(VertexVec[(v + 1) % VertexVec.size()] - P);
+		S += (VertexVec[v] - P).Cross(VertexVec[(v + 1) % VertexVec.size()] - P);
 
 	return S.Dot(normal) < 0;
 }
@@ -42,7 +42,7 @@ bool VMACH::PolygonFace::IsConvex(const Vector3& normal) const
 		Vector3 b = VertexVec[v];
 		Vector3 c = VertexVec[(v + 1) % VertexVec.size()];
 
-		if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, normal) > XM_PI)
+		if (FALSE == OnYourRight(a, b, c, normal))
 		{
 			return false;
 			break;
@@ -105,9 +105,13 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 			Vector3 a = VertexVec[v];
 			Vector3 b = VertexVec[v + 1];
 
-			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
+			/*vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
 			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));*/
+
+			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), Vector3(0, 1, 0)));
+			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), Vector3(0, 1, 0)));
+			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), Vector3(0, 1, 0)));
 
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
@@ -117,84 +121,164 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 	else
 	{
 		// If current polygon can be non-convex, do ear clipping.
-		Vector3 n = GetNormal();
-
-		std::vector<int> vertexOrder(VertexVec.size());
-		std::iota(vertexOrder.begin(), vertexOrder.end(), 0);
-
-		std::unordered_set<int> E;
-
-		const auto checkEar = [&]()
+		const std::vector<int> triangulated = EarClipping();
+		for (int i = 0; i < triangulated.size(); i += 3)
 		{
-			for (auto itr = vertexOrder.begin(); itr != vertexOrder.end(); itr++)
-			{
-				int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
-				int cur = *itr;
-				int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
-
-				Vector3 a = VertexVec[prev];
-				Vector3 b = VertexVec[cur];
-				Vector3 c = VertexVec[next];
-
-				// If triangle is not convex, ignore.
-				if (GetAngleBetweenTwoVectorsOnPlane(b - a, c - a, n) > XM_PI)
-					continue;
-
-				bool pointInsideTri = false;
-
-				for (auto iitr = vertexOrder.begin(); iitr != vertexOrder.end(); iitr++)
-				{
-					if (*iitr == prev || *iitr == cur || *iitr == next)
-						continue;
-
-					Vector3 x = VertexVec[*iitr];
-
-					// Check any point is inside or not.
-					if (GetAngleBetweenTwoVectorsOnPlane(b - a, x - a, n) > XM_PI)
-						continue;
-					if (GetAngleBetweenTwoVectorsOnPlane(c - b, x - b, n) > XM_PI)
-						continue;
-					if (GetAngleBetweenTwoVectorsOnPlane(a - c, x - c, n) > XM_PI)
-						continue;
-
-					pointInsideTri = true;
-					break;
-				}
-
-				if (FALSE == pointInsideTri)
-					E.insert(cur);
-			}
-		};
-
-		checkEar();
-
-		while (E.size() != 0)
-		{
-			if (vertexOrder.size() == 0)
-				break;
-
-			const auto itr = std::find(vertexOrder.begin(), vertexOrder.end(), *E.begin());
-			if (itr == vertexOrder.end())
-				throw std::exception();
-
-			int prev = (itr == vertexOrder.begin()) ? vertexOrder.back() : *std::prev(itr);
-			int cur = *itr;
-			int next = (std::next(itr) == vertexOrder.end()) ? vertexOrder.front() : *std::next(itr);
-
-			vertexData.push_back(VertexNormalColor(VertexVec[prev], XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(VertexVec[cur], XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(VertexVec[next], XMFLOAT3(), color));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i]], XMFLOAT3(), Vector3(1, 0, 0)));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 1]], XMFLOAT3(), Vector3(1, 0, 0)));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 2]], XMFLOAT3(), Vector3(1, 0, 0)));
 
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
-
-			E.erase(E.begin());
-			vertexOrder.erase(itr);
-
-			checkEar();
 		}
 	}
+}
+
+std::vector<int> VMACH::PolygonFace::EarClipping() const
+{
+	struct VertexNode
+	{
+		VertexNode*		Prev;
+		VertexNode*		Next;
+		int				Index;
+		bool			IsReflex;
+	};
+
+	const int N = VertexVec.size();
+	const Vector3 normal = GetNormal();
+
+	std::vector<int> triangles;
+
+	if (N <= 2)
+		return triangles;
+
+	if (N == 3)
+	{
+		triangles.resize(3);
+		triangles = { 0, 1, 2 };
+		return triangles;
+	}
+
+	std::vector<VertexNode> vertices(N);
+
+	const auto isReflex = [&](const VertexNode& vertex)
+	{
+		const Vector3& a = VertexVec[vertex.Prev->Index];
+		const Vector3& b = VertexVec[vertex.Index];
+		const Vector3& c = VertexVec[vertex.Next->Index];
+
+		return !VMACH::OnYourRight(a, b, c, normal);
+	};
+
+	const auto initVertex = [&](const int& curIndex, const int& prevIndex, const int& nextIndex)
+	{
+		vertices[curIndex].Index = curIndex;
+		vertices[curIndex].Prev = &vertices[prevIndex];
+		vertices[curIndex].Next = &vertices[nextIndex];
+		vertices[curIndex].Prev->Index = prevIndex;
+		vertices[curIndex].Next->Index = nextIndex;
+		vertices[curIndex].IsReflex = isReflex(vertices[curIndex]);
+	};
+
+	// Initialize vertices.
+	initVertex(0, N - 1, 1);
+	initVertex(N - 1, N - 2, 0);
+
+	for (int i = 1; i < N - 1; i++)
+		initVertex(i, i - 1, i + 1);
+
+	// Initialize reflex vertices.
+	std::list<VertexNode*> reflexVertices;
+	for (int i = 0; i < N; i++)
+		if (TRUE == vertices[i].IsReflex)
+			reflexVertices.push_back(&vertices[i]);
+
+	const auto isEar = [&](const VertexNode& vertex)
+	{
+		if (TRUE == vertex.IsReflex)
+			return false;
+
+		const Vector3& a = VertexVec[vertex.Prev->Index];
+		const Vector3& b = VertexVec[vertex.Index];
+		const Vector3& c = VertexVec[vertex.Next->Index];
+
+		for (auto itr = reflexVertices.begin(); itr != reflexVertices.end(); itr++)
+		{
+			int index = (*itr)->Index;
+
+			if (index == vertex.Prev->Index || index == vertex.Next->Index)
+				continue;
+
+			if (VertexVec[index] == a || VertexVec[index] == b || VertexVec[index] == c)
+				continue;
+
+			// Check any point is inside or not.
+			if (FALSE == VMACH::OnYourRight(a, b, VertexVec[index], normal))
+				continue;
+			if (FALSE == VMACH::OnYourRight(b, c, VertexVec[index], normal))
+				continue;
+			if (FALSE == VMACH::OnYourRight(c, a, VertexVec[index], normal))
+				continue;
+
+			return false;
+		}
+
+		return true;
+	};
+
+	// Do triangulation.
+	triangles.resize(3 * (N - 2));
+
+	int skipped = 0;
+	int triangleIndex = 0;
+	int nVertices = vertices.size();
+	
+	VertexNode* current = &vertices[0];
+	while (nVertices > 3)
+	{
+		VertexNode* prev = current->Prev;
+		VertexNode* next = current->Next;
+
+		if (TRUE == isEar(*current))
+		{
+			triangles[triangleIndex + 0] = prev->Index;
+			triangles[triangleIndex + 1] = current->Index;
+			triangles[triangleIndex + 2] = next->Index;
+
+			prev->Next = next;
+			next->Prev = prev;
+
+			VertexNode* adjacent[2] = { prev, next };
+
+			for (int i = 0; i < 2; i++)
+			{
+				if (FALSE == adjacent[i]->IsReflex)
+					continue;
+
+				adjacent[i]->IsReflex = isReflex(*adjacent[i]);
+				if (FALSE == adjacent[i]->IsReflex)
+					reflexVertices.remove(adjacent[i]);
+			}
+
+			triangleIndex += 3;
+			nVertices--;
+			skipped = 0;
+		}
+		else if (++skipped > nVertices)
+		{
+			triangles.clear();
+			return triangles;
+		}
+
+		current = next;
+	}
+
+	triangles[triangleIndex + 0] = current->Prev->Index;
+	triangles[triangleIndex + 1] = current->Index;
+	triangles[triangleIndex + 2] = current->Next->Index;
+
+	return triangles;
 }
 
 void VMACH::PolygonFace::AddVertex(const Vector3& newVertex)
@@ -243,14 +327,9 @@ void VMACH::PolygonFace::__Reorder()
 		});
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
+VMACH::PolygonFace VMACH::PolygonFace::ClipWithFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
 {
 	PolygonFace	workingFace = { inFace.GuaranteeConvex };
-	
-	// If face is non-convex, face plane is not constructed automatically.
-	if (FALSE == workingFace.GuaranteeConvex)
-		workingFace.ManuallySetFacePlane(*clippingFace.FacePlane);
-
 	PolygonEdge clippedEdge;
 
 	for (int i = 0; i < inFace.VertexVec.size(); i++)
@@ -292,6 +371,10 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipFace(const PolygonFace& inFace, const
 			workingFace.AddVertex(point2);
 		}
 	}
+
+	// If face is non-convex, face plane is not constructed automatically.
+	if (FALSE == workingFace.GuaranteeConvex)
+		workingFace.ManuallySetFacePlane(*inFace.FacePlane);
 
 	if (clippedEdge.VertexVec.size() == 2)
 		edgeVec.push_back(clippedEdge);
@@ -355,7 +438,7 @@ void VMACH::Polygon3D::Scale(const Vector3& vector)
 			FaceVec[f].VertexVec[v] *= vector;
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
+VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
 {
 	std::vector<PolygonEdge> edgeVec;
 
@@ -363,7 +446,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 	Polygon3D outPolygon = { inPolygon.GuaranteeConvex };
 	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
-		PolygonFace clippedFace = PolygonFace::ClipFace(inPolygon.FaceVec[i], clippingFace, edgeVec);
+		PolygonFace clippedFace = PolygonFace::ClipWithFace(inPolygon.FaceVec[i], clippingFace, edgeVec);
 		if (FALSE == clippedFace.IsEmpty())
 			outPolygon.AddFace(clippedFace);
 	}
@@ -435,9 +518,8 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 				break;
 		}
 
-		
 		// Check closing face is CCW or CW.
-		if (closeFace.IsCCW(cn))
+		if (TRUE == closeFace.IsCCW(cn))
 			closeFace.Rewind();
 
 		// Set face plane if convex is not guranteed.
@@ -458,13 +540,13 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipFace(const Polygon3D& inPolygon, const Po
 	return outPolygon;
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon)
+VMACH::Polygon3D VMACH::Polygon3D::ClipWithPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon)
 {
 	Polygon3D outPolygon = inPolygon;
 
 	// Clip polygon for each faces from clipping polygon.
 	for (int i = 0; i < clippingPolygon.FaceVec.size(); i++)
-		outPolygon = ClipFace(outPolygon, clippingPolygon.FaceVec[i]);
+		outPolygon = ClipWithFace(outPolygon, clippingPolygon.FaceVec[i]);
 
 	return outPolygon;
 }
@@ -868,4 +950,9 @@ float VMACH::GetAngleBetweenTwoVectorsOnPlane(const Vector3& v1, const Vector3& 
 	angle = (angle < 0) ? XM_2PI + angle : angle;
 
 	return angle;
+}
+
+bool VMACH::OnYourRight(const Vector3& a, const Vector3& b, const Vector3& c, const Vector3& n)
+{
+	return (b - a).Cross(c - a).Dot(n) > 0;
 }

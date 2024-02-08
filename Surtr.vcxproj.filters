@@ -48,9 +48,6 @@
     <ClInclude Include="ThirdParty\Inc\StepTimer.h">
       <Filter>ThirdParty\Inc</Filter>
     </ClInclude>
-    <ClInclude Include="ThirdParty\Inc\VHACD.h">
-      <Filter>ThirdParty\Inc</Filter>
-    </ClInclude>
     <ClInclude Include="ThirdParty\Inc\d3dx12.h">
       <Filter>ThirdParty\Inc</Filter>
     </ClInclude>

@@ -1639,7 +1639,7 @@ void Surtr::CreateACH(
     }
 
     // 7. Clip bounding box polygon with clipping faces.
-	VMACH::Polygon3D achPoly = VMACH::Polygon3D::ClipPolygon(bbPolygon, clippingPolygon);
+	VMACH::Polygon3D achPoly = VMACH::Polygon3D::ClipWithPolygon(bbPolygon, clippingPolygon);
     // achPoly.Render(achVertexData, achIndexData);
 
 	// Check ACH contains all points or not.
@@ -1656,7 +1656,7 @@ void Surtr::CreateACH(
         if (FALSE == isContain)
             m_decompositionResult.ACHErrorPointCnt++;
 
-		boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));
+		// boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));
 	}
 
 	// Generate mesh polygon. That can be non-convex.
@@ -1673,19 +1673,19 @@ void Surtr::CreateACH(
 	}
 
     // #TEST
-	/*const auto clippedMesh =
+	/*const auto c2 =
 		VMACH::Polygon3D::ClipFace(
 			meshPolygon,
-			VMACH::PolygonFace(true, { Vector3(100, 10, -100), Vector3(-100, 10, -100), Vector3(-100, 10, 100), Vector3(100, 10, 100) }));
+			VMACH::PolygonFace(true, { Vector3(-100, -100, 0), Vector3(-100, 100, 0), Vector3(100, 100, 0), Vector3(100, -100, 0) }));
 
-	clippedMesh.Render(achVertexData, achIndexData);
+	c2.Render(achVertexData, achIndexData);
 
 	return;*/
 
     // 8. Voronoi diagram generation.
     Vector3 voroBBMinVec(minX, minY, minZ);
     Vector3 voroBBMaxVec(maxX, maxY, maxZ);
-    const int cellCount = 8;
+    const int cellCount = 32;
 
 	voro::container voroCon(
         voroBBMinVec.x, voroBBMaxVec.x, 
@@ -1768,7 +1768,7 @@ void Surtr::CreateACH(
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
-		outer *= 2;
+		outer *= 4;
 
 		voroPolyVec[i].Translate(outer);
 		voroPolyVec[i].Render(achVertexData, achIndexData, color);
@@ -1781,8 +1781,14 @@ void Surtr::CreateACH(
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
 
-        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipPolygon(achPoly, voroPolyVec[i]);
-        VMACH::Polygon3D clippedMeshPoly = VMACH::Polygon3D::ClipPolygon(meshPolygon, voroPolyVec[i]);
+        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
+        
+        VMACH::Polygon3D clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(meshPolygon, voroPolyVec[i].FaceVec[0]);
+        for (int j = 1; j < voroPolyVec[i].FaceVec.size(); j++)
+        {
+            clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(clippedMeshPoly, voroPolyVec[i].FaceVec[j]);
+			// voroPolyVec[i].FaceVec[j].Render(achVertexData, achIndexData);
+        }
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
