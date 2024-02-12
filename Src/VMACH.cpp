@@ -4,6 +4,9 @@
 using namespace DirectX;
 using namespace SimpleMath;
 
+const auto rnd = []() { return double(rand() * 0.75) / RAND_MAX; };
+std::vector <VMACH::PolygonEdge> globalEdgeContainer;
+
 bool VMACH::PolygonFace::operator==(const PolygonFace& other)
 {
 	if (VertexVec.size() != other.VertexVec.size())
@@ -55,7 +58,7 @@ bool VMACH::PolygonFace::IsConvex(const Vector3& normal) const
 double VMACH::PolygonFace::CalcDistanceToPoint(const Vector3& point) const
 {
 	Vector3 n = GetNormal();
-	return n.Dot(point) + (double)FacePlane->w;
+	return n.Dot(point) + (double)FacePlane.w;
 }
 
 Vector3 VMACH::PolygonFace::GetIntersectionPoint(const Vector3& p1, const Vector3& p2) const
@@ -85,10 +88,10 @@ Vector3 VMACH::PolygonFace::GetCentriod() const
 
 VMACH::Vector3 VMACH::PolygonFace::GetNormal() const
 {
-	if (FacePlane == nullptr)
+	if (FALSE == FacePlaneConstructed)
 		throw std::exception();
 
-	Vector3 n = FacePlane->Normal();
+	Vector3 n = FacePlane.Normal();
 	n.Normalize();
 
 	return n;
@@ -96,6 +99,10 @@ VMACH::Vector3 VMACH::PolygonFace::GetNormal() const
 
 void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Vector3& color) const
 {
+	XMFLOAT3 cc = XMFLOAT3(0.25, 0.25, 0.25);
+	if (TRUE == ForceColor)
+		cc = Vector3(1, 0, 0);
+
 	if (TRUE == GuaranteeConvex)
 	{
 		// If current polygon is always convex, do fan triangulization.
@@ -105,13 +112,9 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 			Vector3 a = VertexVec[v];
 			Vector3 b = VertexVec[v + 1];
 
-			/*vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), color));
-			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), color));*/
-
-			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), Vector3(0, 1, 0)));
-			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), Vector3(0, 1, 0)));
-			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), Vector3(0, 1, 0)));
+			vertexData.push_back(VertexNormalColor(anchor, XMFLOAT3(), cc));
+			vertexData.push_back(VertexNormalColor(a, XMFLOAT3(), cc));
+			vertexData.push_back(VertexNormalColor(b, XMFLOAT3(), cc));
 
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
@@ -124,9 +127,9 @@ void VMACH::PolygonFace::Render(std::vector<VertexNormalColor>& vertexData, std:
 		const std::vector<int> triangulated = EarClipping();
 		for (int i = 0; i < triangulated.size(); i += 3)
 		{
-			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i]], XMFLOAT3(), Vector3(1, 0, 0)));
-			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 1]], XMFLOAT3(), Vector3(1, 0, 0)));
-			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 2]], XMFLOAT3(), Vector3(1, 0, 0)));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i]], XMFLOAT3(), cc));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 1]], XMFLOAT3(),cc));
+			vertexData.push_back(VertexNormalColor(VertexVec[triangulated[i + 2]], XMFLOAT3(), cc));
 
 			indexData.push_back(indexData.size());
 			indexData.push_back(indexData.size());
@@ -297,12 +300,16 @@ void VMACH::PolygonFace::ConstructFacePlane()
 {
 	// Construct face plane only if convex is guranteed and at least 3 vertices exists.
 	if (TRUE == GuaranteeConvex && VertexVec.size() >= 3)
-		FacePlane = std::make_unique<Plane>(VertexVec[0], VertexVec[1], VertexVec[2]);
+	{
+		FacePlane = Plane(VertexVec[0], VertexVec[1], VertexVec[2]);
+		FacePlaneConstructed = true;
+	}
 }
 
 void VMACH::PolygonFace::ManuallySetFacePlane(const Plane& plane)
 {
-	FacePlane = std::make_unique<Plane>(plane);
+	FacePlane = plane;
+	FacePlaneConstructed = true;
 }
 
 void VMACH::PolygonFace::Rewind()
@@ -374,7 +381,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithFace(const PolygonFace& inFace, c
 
 	// If face is non-convex, face plane is not constructed automatically.
 	if (FALSE == workingFace.GuaranteeConvex)
-		workingFace.ManuallySetFacePlane(*inFace.FacePlane);
+		workingFace.ManuallySetFacePlane(inFace.FacePlane);
 
 	if (clippedEdge.VertexVec.size() == 2)
 		edgeVec.push_back(clippedEdge);
@@ -438,7 +445,21 @@ void VMACH::Polygon3D::Scale(const Vector3& vector)
 			FaceVec[f].VertexVec[v] *= vector;
 }
 
-VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace)
+bool intersection(const Vector3& a2, const Vector3& a1, const Vector3& b2, const Vector3& b1, Vector3& res)
+{
+	Vector3 da = a2 - a1;
+	Vector3 db = b2 - b1;
+	Vector3 dc = b1 - a1;
+
+	double s = (dc.Cross(db)).Dot(da.Cross(db)) / (da.Cross(db)).LengthSquared();
+	double t = (dc.Cross(da)).Dot(da.Cross(db)) / (da.Cross(db)).LengthSquared();
+
+	res = a1 + da * Vector3(s, s, s);
+
+	return 0 <= s && s <= 1 && 0 <= t && t <= 1;
+}
+
+VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace, int doTest)
 {
 	std::vector<PolygonEdge> edgeVec;
 
@@ -447,6 +468,139 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, cons
 	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
 		PolygonFace clippedFace = PolygonFace::ClipWithFace(inPolygon.FaceVec[i], clippingFace, edgeVec);
+
+		if (clippedFace.VertexVec.size() >= 3)
+		{
+			std::vector<PolygonEdge> ev;
+
+			for (int v = 0; v < clippedFace.VertexVec.size(); v++)
+			{
+				const Vector3& va = clippedFace.VertexVec[v];
+				const Vector3& vb = clippedFace.VertexVec[(v + 1) % clippedFace.VertexVec.size()];
+
+				PolygonEdge e;
+				e.VertexVec.push_back(va);
+				e.VertexVec.push_back(vb);
+
+				ev.push_back(e);
+			}
+
+			std::vector<int> inter3;
+			int inter4 = -1;
+
+			for (int e = 0; e < ev.size(); e++)
+			{
+				int interCnt = 0;
+				for (int ee = 0; ee < ev.size(); ee++)
+				{
+					if (e == ee)
+						continue;
+
+					Vector3 res;
+					bool solved = intersection(ev[e].VertexVec[0], ev[e].VertexVec[1], ev[ee].VertexVec[0], ev[ee].VertexVec[1], res);
+
+					if (solved)
+						interCnt++;
+				}
+
+				if (interCnt == 3)
+				{
+					inter3.push_back(e);
+				}
+				else if (interCnt >= 4)
+				{
+					if (inter4 == -1)
+						inter4 = e;
+				}
+			}
+
+			if ((inter3.size() == 0) || (inter4 == -1))
+			{
+				clippedFace.ForceColor = true;
+				goto GENERAL;
+			}
+
+			std::vector<std::pair<int, int>> newGen;
+			
+			int cursor = inter4 + 1;
+			for (int a = 0; a < inter3.size(); a++)
+			{
+				Vector3 res;
+				bool solved = intersection(
+					ev[inter3[a]].VertexVec[0], 
+					ev[inter3[a]].VertexVec[1],
+					ev[inter4].VertexVec[0], 
+					ev[inter4].VertexVec[1],
+					res);
+
+				bool closeFirst = (res - ev[inter3[a]].VertexVec[0]).Length() < (res - ev[inter3[a]].VertexVec[1]).Length();
+				int val = closeFirst ? inter3[a] : (inter3[a] + 1);
+				newGen.emplace_back(val, cursor);
+				cursor = val;
+			}
+			newGen.emplace_back(inter4, cursor);
+
+			// #LOOK
+			for (int a = 0; a < newGen.size(); a++)
+			{
+				if (a % 2 != 0)
+					continue;
+
+				PolygonEdge ed;
+				ed.VertexVec.push_back(clippedFace.VertexVec[(newGen[a].first) % clippedFace.VertexVec.size()]);
+				ed.VertexVec.push_back(clippedFace.VertexVec[(newGen[a].second) % clippedFace.VertexVec.size()]);
+
+				edgeVec.push_back(ed);
+			}
+
+			std::vector<std::vector<int>> seperate;
+
+			for (int x = 0; x < newGen.size(); x++)
+			{
+				if (x % 2 != 0)
+					continue;
+
+				std::vector<int> li;
+				if (x == 0)
+				{
+					for (int v = 0; v <= newGen[x].first; v++)
+						li.push_back(v);
+					for (int v = newGen[x].second; v < clippedFace.VertexVec.size(); v++)
+						li.push_back(v);
+				}
+				else
+				{
+					for (int v = newGen[x].second; v <= newGen[x].first; v++)
+						li.push_back(v);
+				}
+
+				seperate.push_back(li);
+			}
+
+			std::vector<std::vector<Vector3>> seperateVec;
+			
+			for (const auto& intvec : seperate)
+			{
+				std::vector<Vector3> v3vec;
+				for (const auto& i : intvec)
+				{
+					v3vec.push_back(clippedFace.VertexVec[i]);
+				}
+				seperateVec.push_back(v3vec);
+			}
+
+			clippedFace.VertexVec = seperateVec[0];
+
+			for (int e = 1; e < seperateVec.size(); e++)
+			{
+				PolygonFace face = clippedFace;
+				face.VertexVec = seperateVec[e];
+
+				outPolygon.AddFace(face);
+			}
+		}
+
+	GENERAL:
 		if (FALSE == clippedFace.IsEmpty())
 			outPolygon.AddFace(clippedFace);
 	}
@@ -456,6 +610,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, cons
 
 	Vector3 cn = clippingFace.GetNormal();
 
+	int faceCnt = 1;
 	const auto extractFace = [&]() 
 	{
 		// Closing face can be non-convex when inPolygon is not guranteed.
@@ -469,6 +624,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, cons
 		std::swap(edgeVec[0], edgeVec.back());
 		edgeVec.pop_back();
 
+		bool disconn = false;
 		bool polygonClosed = false;
 		while (TRUE)
 		{
@@ -510,9 +666,22 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, cons
 				}
 			}
 
-			// #TEST ignore error faces.
+			// #LOOK
 			if (TRUE == err)
-				return;
+			{
+				OutputDebugStringWFormat(L"REVERSE\n");
+				if (FALSE == disconn)
+				{
+					std::reverse(closeFace.VertexVec.begin(), closeFace.VertexVec.end());
+					findPoint = closeFace.VertexVec.back();
+
+					disconn = true;
+				}
+				else
+				{
+					polygonClosed = true;
+				}
+			}
 
 			if (TRUE == polygonClosed)
 				break;
@@ -526,17 +695,20 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithFace(const Polygon3D& inPolygon, cons
 		// Check closing face is really non-convex or not.
 		if (FALSE == closeFace.GuaranteeConvex)
 		{
-			closeFace.ManuallySetFacePlane(*clippingFace.FacePlane);
+			closeFace.ManuallySetFacePlane(clippingFace.FacePlane);
 			closeFace.GuaranteeConvex = closeFace.IsConvex(cn);
 		}
 
 		outPolygon.AddFace(closeFace);
 	};
 
-	// #TEST
 	while (edgeVec.size() != 0)
+	{
 		extractFace();
+		faceCnt++;
+	}
 
+	OutputDebugStringWFormat(L"ERR %d\n", faceCnt);
 	return outPolygon;
 }
 
@@ -955,4 +1127,18 @@ float VMACH::GetAngleBetweenTwoVectorsOnPlane(const Vector3& v1, const Vector3& 
 bool VMACH::OnYourRight(const Vector3& a, const Vector3& b, const Vector3& c, const Vector3& n)
 {
 	return (b - a).Cross(c - a).Dot(n) > 0;
+}
+
+void VMACH::RenderEdge(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData)
+{
+	for (int e = 0; e < globalEdgeContainer.size(); e++)
+	{
+		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[0], XMFLOAT3(), Vector3(1, 0, 0)));
+		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[1], XMFLOAT3(), Vector3(1, 0, 0)));
+		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[1] + Vector3(-0.01, 0.01, -0.01), XMFLOAT3(), Vector3(1, 0, 0)));
+
+		indexData.push_back(indexData.size());
+		indexData.push_back(indexData.size());
+		indexData.push_back(indexData.size());
+	}
 }

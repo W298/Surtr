@@ -1,6 +1,6 @@
 #pragma once
 
-#define RENDER_OBJECT 0
+#define RENDER_OBJECT 2
 
 #include "ShadowMap.h"
 #include "Mesh.h"

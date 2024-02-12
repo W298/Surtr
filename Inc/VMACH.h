@@ -18,29 +18,14 @@ namespace VMACH
 	{
 		bool						GuaranteeConvex;
 		std::vector<Vector3>		VertexVec;
-		std::unique_ptr<Plane>		FacePlane = nullptr;
+		Plane						FacePlane;
+		bool						FacePlaneConstructed;
+		bool						ForceColor;
 
 		PolygonFace(bool _guranteeConvex) : 
-			GuaranteeConvex(_guranteeConvex), VertexVec() {}
+			GuaranteeConvex(_guranteeConvex), VertexVec(), FacePlaneConstructed(false) {}
 		PolygonFace(bool _guranteeConvex, std::vector<Vector3> _vertexVec) : 
 			GuaranteeConvex(_guranteeConvex), VertexVec(_vertexVec) { ConstructFacePlane(); }
-		
-		PolygonFace(const PolygonFace& other) : 
-			GuaranteeConvex(other.GuaranteeConvex), VertexVec(other.VertexVec)
-		{
-			if (other.FacePlane != nullptr) FacePlane = std::make_unique<Plane>(*other.FacePlane.get());
-		}
-		PolygonFace& operator= (const PolygonFace& other)
-		{
-			GuaranteeConvex = other.GuaranteeConvex;
-			VertexVec = other.VertexVec;
-			if (other.FacePlane != nullptr) FacePlane = std::make_unique<Plane>(*other.FacePlane.get());
-		}
-
-		~PolygonFace()
-		{
-			FacePlane.release();
-		}
 
 		bool operator==(const PolygonFace& other);
 
@@ -91,7 +76,7 @@ namespace VMACH
 		void Scale(const float& scalar);
 		void Scale(const Vector3& vector);
 
-		static Polygon3D ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace);
+		static Polygon3D ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace, int doTest = 0);
 		static Polygon3D ClipWithPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon);
 	};
 
@@ -178,6 +163,7 @@ namespace VMACH
 	Polygon3D GetBoxPolygon();
 	float GetAngleBetweenTwoVectorsOnPlane(const Vector3& v1, const Vector3& v2, const Vector3& n);
 	bool OnYourRight(const Vector3& a, const Vector3& b, const Vector3& c, const Vector3& n);
+	void RenderEdge(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData);
 };
 
 #endif

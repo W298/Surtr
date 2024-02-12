@@ -1777,6 +1777,9 @@ void Surtr::CreateACH(
     // Render clipped convex.
     for (int i = 0; i < voroPolyVec.size(); i++)
     {
+       /* if (i != 30)
+            continue;*/
+
 		double a, b, c;
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
@@ -1786,13 +1789,14 @@ void Surtr::CreateACH(
         VMACH::Polygon3D clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(meshPolygon, voroPolyVec[i].FaceVec[0]);
         for (int j = 1; j < voroPolyVec[i].FaceVec.size(); j++)
         {
-            clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(clippedMeshPoly, voroPolyVec[i].FaceVec[j]);
-			// voroPolyVec[i].FaceVec[j].Render(achVertexData, achIndexData);
+            clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(clippedMeshPoly, voroPolyVec[i].FaceVec[j], j);
+            //voroPolyVec[i].FaceVec[j].Render(achVertexData, achIndexData);
         }
+        //voroPolyVec[i].FaceVec[10].Render(achVertexData, achIndexData);
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
-		outer *= 4;
+		outer *= 8;
 
         // clippedPoly.Translate(outer);
         // clippedPoly.Render(achVertexData, achIndexData, color);
@@ -1800,6 +1804,8 @@ void Surtr::CreateACH(
         clippedMeshPoly.Translate(outer);
         clippedMeshPoly.Render(achVertexData, achIndexData, color);
     }
+
+    VMACH::RenderEdge(achVertexData, achIndexData);
 }
 
 void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices)
