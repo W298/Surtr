@@ -62,7 +62,7 @@ private:
 	struct DecompositionArgument
 	{
 		INT                 ICHIncludePointLimit = 100;
-		FLOAT               ACHPlaneGapInverse = 1000.0f;
+		FLOAT               ACHPlaneGapInverse = 2000.0f;
 	};
 
 	struct DecompositionResult

@@ -1568,36 +1568,8 @@ void Surtr::CreateACH(
     double maxAxisScale = std::max(std::max(maxX - minX, maxY - minY), maxZ - minZ);
 
     // 4. Calculate min/max plane for k-DOP generation.
-	std::vector<double> kdopMin(ichFaceNormalVec.size(), DBL_MAX);
-	std::vector<double> kdopMax(ichFaceNormalVec.size(), -DBL_MAX);
-    
-    std::vector<Plane> kdopMinPlane(ichFaceNormalVec.size());
-    std::vector<Plane> kdopMaxPlane(ichFaceNormalVec.size());
-
-	std::vector<Vector3> kdopMinVertex(ichFaceNormalVec.size());
-	std::vector<Vector3> kdopMaxVertex(ichFaceNormalVec.size());
-
-    for (int v = 0; v < vertices.size(); v++)
-    {
-        for (int f = 0; f < ichFaceNormalVec.size(); f++)
-        {
-            float t = vertices[v].Dot(ichFaceNormalVec[f]);
-
-            if (kdopMin[f] > t)
-            {
-                kdopMin[f] = t;
-                kdopMinPlane[f] = Plane(vertices[v], -ichFaceNormalVec[f]);
-                kdopMinVertex[f] = vertices[v];
-            }
-
-            if (kdopMax[f] < t)
-            {
-                kdopMax[f] = t;
-                kdopMaxPlane[f] = Plane(vertices[v], ichFaceNormalVec[f]);
-                kdopMaxVertex[f] = vertices[v];
-            }
-        }
-    }
+    VMACH::Kdop achKdop(ichFaceNormalVec);
+    achKdop.Calc(vertices, maxAxisScale, m_decompositionArgument.ACHPlaneGapInverse);
 
     // 5. Init bounding box polygon.
     VMACH::Polygon3D bbPolygon = VMACH::GetBoxPolygon();
@@ -1605,41 +1577,8 @@ void Surtr::CreateACH(
     bbPolygon.Scale(2.0);
     bbPolygon.Translate(bbCenter);
 
-    // 6. Collect polygon face using ICH face planes.
-    const auto collectPolygonFaces = [&](Plane p, Vector3 x)
-    {
-        VMACH::PolygonFace cf = { true };
-
-		Vector3 n = p.Normal();
-		n.Normalize();
-
-        Vector3 tmp(1, 2, 3);
-        Vector3 u = n.Cross(tmp);
-		u.Normalize();
-
-        Vector3 v = u.Cross(n);
-		v.Normalize();
-
-        // #CORRECTION
-        Vector3 p1 = x + u * 100000 - v * 100000 + n * maxAxisScale / m_decompositionArgument.ACHPlaneGapInverse;
-        Vector3 p2 = x + u * 100000 + v * 100000 + n * maxAxisScale / m_decompositionArgument.ACHPlaneGapInverse;
-        Vector3 p3 = x - u * 100000 + v * 100000 + n * maxAxisScale / m_decompositionArgument.ACHPlaneGapInverse;
-        Vector3 p4 = x - u * 100000 - v * 100000 + n * maxAxisScale / m_decompositionArgument.ACHPlaneGapInverse;
-
-		cf.AddVertex(p1); cf.AddVertex(p2); cf.AddVertex(p3); cf.AddVertex(p4);
-        cf.Rewind();
-        return cf;
-    };
-
-    VMACH::Polygon3D clippingPolygon = { true };
-    for (int f = 0; f < ichFaceNormalVec.size(); f++)
-    {
-        clippingPolygon.AddFace(collectPolygonFaces(kdopMaxPlane[f], kdopMaxVertex[f]));
-        clippingPolygon.AddFace(collectPolygonFaces(kdopMinPlane[f], kdopMinVertex[f]));
-    }
-
     // 7. Clip bounding box polygon with clipping faces.
-	VMACH::Polygon3D achPoly = VMACH::Polygon3D::ClipWithPolygon(bbPolygon, clippingPolygon);
+    VMACH::Polygon3D achPoly = achKdop.ClipWithPolygon(bbPolygon);
     // achPoly.Render(achVertexData, achIndexData);
 
 	// Check ACH contains all points or not.
@@ -1774,38 +1713,177 @@ void Surtr::CreateACH(
 		voroPolyVec[i].Render(achVertexData, achIndexData, color);
 	}*/
 
+    std::vector<VMACH::Compound> initialCompundVec;
+
     // Render clipped convex.
     for (int i = 0; i < voroPolyVec.size(); i++)
     {
-       /* if (i != 30)
-            continue;*/
-
 		double a, b, c;
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
 
-        VMACH::Polygon3D clippedPoly = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
-        
-        VMACH::Polygon3D clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(meshPolygon, voroPolyVec[i].FaceVec[0]);
-        for (int j = 1; j < voroPolyVec[i].FaceVec.size(); j++)
-        {
-            clippedMeshPoly = VMACH::Polygon3D::ClipWithFace(clippedMeshPoly, voroPolyVec[i].FaceVec[j], j);
-            //voroPolyVec[i].FaceVec[j].Render(achVertexData, achIndexData);
-        }
-        //voroPolyVec[i].FaceVec[10].Render(achVertexData, achIndexData);
+        VMACH::Compound comp;
+        comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
+        if (comp.convexCell.FaceVec.size() == 0)
+            continue;
+
+        comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(meshPolygon, voroPolyVec[i]);
+        // comp.visualMesh.Render(achVertexData, achIndexData);
 
 		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
 		outer.Normalize();
 		outer *= 8;
 
-        // clippedPoly.Translate(outer);
-        // clippedPoly.Render(achVertexData, achIndexData, color);
+        // comp.convexCell.Translate(outer);
+        // comp.convexCell.Render(achVertexData, achIndexData, color);
         
-        clippedMeshPoly.Translate(outer);
-        clippedMeshPoly.Render(achVertexData, achIndexData, color);
+        // comp.visualMesh.Translate(outer);
+        // comp.visualMesh.Render(achVertexData, achIndexData, color);
+
+        // Re-fitting.
+		if (comp.convexCell.FaceVec.size() != 0)
+		{
+            VMACH::Kdop kdop(ichFaceNormalVec);
+            kdop.Calc(comp.visualMesh);
+
+            OutputDebugStringW(L"SEE BELOW\n");
+            comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);
+            // comp.convexCell.Render(achVertexData, achIndexData, color);
+		}
+
+        initialCompundVec.push_back(comp);
     }
 
-    VMACH::RenderEdge(achVertexData, achIndexData);
+    {
+		// Fracture Pattern Generation.
+		Vector3 voroBBMinVec(minX * 1.75 - 1, minY * 1.75 - 6, minZ * 1.75 + 1);
+		Vector3 voroBBMaxVec(maxX * 1.75 - 1, maxY * 1.75 - 6, maxZ * 1.75 + 1);
+		const int cellCount = 32;
+
+		voro::container voroCon(
+			voroBBMinVec.x, voroBBMaxVec.x,
+			voroBBMinVec.y, voroBBMaxVec.y,
+			voroBBMinVec.z, voroBBMaxVec.z, 2, 2, 2, false, false, false, 8);
+
+		int i = 0;
+		double x, y, z;
+		while (i < cellCount)
+		{
+            x = voroBBMinVec.x + rnd() * (voroBBMaxVec.x - voroBBMinVec.x);
+            y = voroBBMinVec.y + rnd() * (voroBBMaxVec.y - voroBBMinVec.y);
+            z = voroBBMinVec.z + rnd() * (voroBBMaxVec.z - voroBBMinVec.z);
+			if (voroCon.point_inside(x, y, z))
+			{
+				voroCon.put(i, x, y, z);
+				i++;
+			}
+		}
+
+		std::vector<VMACH::Polygon3D> voroPolyVec;
+
+		int id;
+		voro::voronoicell_neighbor voroCell;
+		std::vector<int> neighborVec;
+
+		voro::c_loop_all cl(voroCon);
+		int dimension = 0;
+		if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
+		{
+			dimension += 1;
+		} while (cl.inc());
+
+		int counter = 0;
+		if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
+		{
+			cl.pos(x, y, z);
+			id = cl.pid();
+
+			std::vector<int> cellFaceVec;
+			std::vector<double> cellVertices;
+
+			voroCell.neighbors(neighborVec);
+			voroCell.face_vertices(cellFaceVec);
+			voroCell.vertices(x, y, z, cellVertices);
+
+			VMACH::Polygon3D voroPoly = { true };
+
+			int cur = 0;
+			while (cur < cellFaceVec.size())
+			{
+				VMACH::PolygonFace face = { true };
+
+				int cnt = cellFaceVec[cur];
+				for (int i = 0; i < cnt; i++)
+				{
+					int vertIndex = cellFaceVec[cur + i + 1];
+					face.AddVertex(Vector3(
+						cellVertices[3 * vertIndex],
+						cellVertices[3 * vertIndex + 1],
+						cellVertices[3 * vertIndex + 2]));
+				}
+				cur += cnt + 1;
+
+				face.Rewind();
+				voroPoly.AddFace(face);
+			}
+
+			voroPolyVec.push_back(voroPoly);
+
+			counter += 1;
+		} while (cl.inc());
+
+        for (int i = 0; i < voroPolyVec.size(); i++)
+		{
+			double a, b, c;
+			a = rnd(); b = rnd(); c = rnd();
+			XMFLOAT3 color(a, b, c);
+
+			Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
+			outer.Normalize();
+			outer *= 4;
+
+			//voroPolyVec[i].Translate(outer);
+			//voroPolyVec[i].Render(achVertexData, achIndexData, color);
+		}
+
+        std::vector<std::vector<VMACH::Compound>> secondCompoundVec(initialCompundVec.size());
+
+		for (int j = 0; j < voroPolyVec.size(); j++)
+		{
+			for (int i = 0; i < initialCompundVec.size(); i++)
+			{
+				VMACH::Compound comp;
+				comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].convexCell, voroPolyVec[j]);
+				if (comp.convexCell.FaceVec.size() == 0)
+					continue;
+
+                // #INEFFICIENT!
+                comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].visualMesh, voroPolyVec[j]);
+
+				secondCompoundVec[i].push_back(comp);
+			}
+		}
+
+        for (int i = 0; i < secondCompoundVec.size(); i++)
+        {
+            for (int j = 0; j < secondCompoundVec[i].size(); j++)
+            {
+				double a, b, c;
+				a = rnd(); b = rnd(); c = rnd();
+				XMFLOAT3 color(a, b, c);
+
+				Vector3 outer = secondCompoundVec[i][j].convexCell.GetCentroid() - bbCenter;
+				outer.Normalize();
+				outer *= 4;
+
+                // secondCompoundVec[i][j].convexCell.Translate(outer);
+                // secondCompoundVec[i][j].convexCell.Render(achVertexData, achIndexData, color);
+
+                secondCompoundVec[i][j].visualMesh.Translate(outer);
+                secondCompoundVec[i][j].visualMesh.Render(achVertexData, achIndexData, color);
+            }
+        }
+    }
 }
 
 void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices)

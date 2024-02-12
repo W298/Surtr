@@ -51,6 +51,7 @@ namespace VMACH
 		void Rewind();
 		void __Reorder();
 
+		static PolygonFace ClipWithPlane(const PolygonFace& inFace, const Plane& clippingPlane, std::vector<PolygonEdge>& edgeVec);
 		static PolygonFace ClipWithFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec);
 	};
 
@@ -76,6 +77,7 @@ namespace VMACH
 		void Scale(const float& scalar);
 		void Scale(const Vector3& vector);
 
+		static Polygon3D ClipWithPlane(const Polygon3D& inPolygon, const Plane& clippingPlane);
 		static Polygon3D ClipWithFace(const Polygon3D& inPolygon, const PolygonFace& clippingFace, int doTest = 0);
 		static Polygon3D ClipWithPolygon(const Polygon3D& inPolygon, const Polygon3D& clippingPolygon);
 	};
@@ -157,6 +159,41 @@ namespace VMACH
 		std::list<ConvexHullFace>                            m_faceList = {};
 		std::list<ConvexHullEdge>                            m_edgeList = {};
 		std::unordered_map<size_t, ConvexHullEdge*>          m_edgeMap = {};
+	};
+
+	struct KdopElement
+	{
+		Vector3 Normal;
+		Vector3 MinVertex;
+		Vector3 MaxVertex;
+		double MinDist = DBL_MAX;
+		double MaxDist = -DBL_MAX;
+		Plane MinPlane;
+		Plane MaxPlane;
+
+		KdopElement(const Vector3& _normal) : Normal(_normal) {}
+	};
+
+	struct Kdop
+	{
+		std::vector<KdopElement> elementVec;
+
+		Kdop(const std::vector<Vector3>& normalVec)
+		{
+			std::transform(normalVec.begin(), normalVec.end(), std::back_inserter(elementVec), [](const Vector3& normal) { return KdopElement(normal); });
+		}
+
+		void Calc(const std::vector<ConvexHullVertex>& vertices, const double& maxAxisScale, const float& planeGapInv);
+		void Calc(const Polygon3D& mesh);
+		Polygon3D ClipWithPolygon(const Polygon3D& polygon) const;
+	};
+
+	struct Compound
+	{
+		Polygon3D convexCell;
+		Polygon3D visualMesh;
+
+		Compound() : convexCell({ true }), visualMesh({ false }) {}
 	};
 
 	bool NearlyEqual(const Vector3& v1, const Vector3& v2);
