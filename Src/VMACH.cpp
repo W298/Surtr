@@ -337,6 +337,8 @@ void VMACH::PolygonFace::__Reorder()
 VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, const Plane& clippingPlane, std::vector<PolygonEdge>& edgeVec)
 {
 	PolygonFace	workingFace = { inFace.GuaranteeConvex };
+	workingFace.AdjFaceVec = inFace.AdjFaceVec;
+
 	PolygonEdge clippedEdge;
 
 	for (int i = 0; i < inFace.VertexVec.size(); i++)
@@ -354,7 +356,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, 
 			return n.Dot(point) + (double)clippingPlane.w;
 		};
 
-		const auto getIntersectionPoint = [&clippingPlane, &calcDistanceToPoint](const Vector3& p1, const Vector3& p2)
+		const auto getIntersectionPoint = [&clippingPlane, &calcDistanceToPoint](const Vector3& p1, const Vector3& p2, Vector3& intersection)
 		{
 			Vector3 n = clippingPlane.Normal();
 			n.Normalize();
@@ -367,22 +369,58 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, 
 			const Vector3 v1 = (h1 < h2) ? p1 : p2;
 			const Vector3 v2 = (h1 < h2) ? p2 : p1;
 
-			return v1 + (v2 - v1) * (-calcDistanceToPoint(v1) / n.Dot(v2 - v1));
+			if (n.Dot(v2 - v1) == 0)
+				return false;
+
+			intersection = v1 + (v2 - v1) * (-calcDistanceToPoint(v1) / n.Dot(v2 - v1));
+			return true;
 		};
 
 		double d1 = calcDistanceToPoint(point1);
 		double d2 = calcDistanceToPoint(point2);
 
-		// #CORRECTION
+		if (d1 == 0 && d2 == 0)
+		{
+			workingFace.AddVertex(point2);
+		}
+		else if (d1 < 0 && d2 == 0)
+		{
+			workingFace.AddVertex(point2);
+
+			clippedEdge.VertexVec.push_back(point2);
+		}
+		else if (d1 > 0 && d2 == 0)
+		{
+			workingFace.AddVertex(point2);
+
+			clippedEdge.VertexVec.push_back(point2);
+		}
+		else if (d1 == 0 && d2 < 0)
+		{
+			workingFace.AddVertex(point2);
+
+			clippedEdge.VertexVec.push_back(point1);
+		}
+		else if (d1 == 0 && d2 > 0)
+		{
+			clippedEdge.VertexVec.push_back(point1);
+		}
 		// IN, IN
-		if (d1 <= 0 && d2 <= 0)
+		else if (d1 < 0 && d2 < 0)
 		{
 			workingFace.AddVertex(point2);
 		}
 		// IN, OUT
-		else if (d1 <= 0 && d2 > 0)
+		else if (d1 < 0 && d2 > 0)
 		{
-			Vector3 intersection = getIntersectionPoint(point1, point2);
+			Vector3 intersection;
+			bool solved = getIntersectionPoint(point1, point2, intersection);
+			if (FALSE == solved)
+			{
+				workingFace.AddVertex(point2);
+				continue;
+			}
+
 			clippedEdge.VertexVec.push_back(intersection);
 
 			workingFace.AddVertex(intersection);
@@ -393,9 +431,16 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, 
 			continue;
 		}
 		// OUT, IN
-		else
+		else if (d1 > 0 && d2 < 0)
 		{
-			Vector3 intersection = getIntersectionPoint(point1, point2);
+			Vector3 intersection;
+			bool solved = getIntersectionPoint(point1, point2, intersection);
+			if (FALSE == solved)
+			{
+				workingFace.AddVertex(point2);
+				continue;
+			}
+
 			clippedEdge.VertexVec.push_back(intersection);
 
 			workingFace.AddVertex(intersection);
@@ -407,7 +452,14 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, 
 	if (FALSE == workingFace.GuaranteeConvex)
 		workingFace.ManuallySetFacePlane(inFace.FacePlane);
 
-	if (clippedEdge.VertexVec.size() == 2)
+	std::vector<Vector3> uniqueVert;
+	UniqueVector(clippedEdge.VertexVec, uniqueVert);
+	clippedEdge.VertexVec = uniqueVert;
+
+	if (workingFace.GuaranteeConvex && clippedEdge.VertexVec.size() > 2)
+		OutputDebugStringWFormat(L"%d cnt\n", clippedEdge.VertexVec.size());
+
+	if (clippedEdge.VertexVec.size() >= 2)
 		edgeVec.push_back(clippedEdge);
 
 	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace(inFace.GuaranteeConvex);
@@ -432,7 +484,7 @@ bool VMACH::Polygon3D::Contains(const Vector3& point) const
 {
 	for (const PolygonFace& f : FaceVec)
 	{
-		if (f.CalcDistanceToPoint(point) > +EPSILON)
+		if (f.CalcDistanceToPoint(point) > 0)
 			return false;
 	}
 
@@ -505,7 +557,12 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 	Polygon3D outPolygon = { inPolygon.GuaranteeConvex };
 	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
-		if (TRUE == NearlyEqual(inPolygon.FaceVec[i].FacePlane.Normal(), clippingPlane.Normal()) && std::abs(inPolygon.FaceVec[i].FacePlane.w - clippingPlane.w) < EPSILON)
+		Vector3 n = inPolygon.FaceVec[i].FacePlane.Normal();
+		Vector3 nn = clippingPlane.Normal();
+		n.Normalize();
+		nn.Normalize();
+
+		if (TRUE == NearlyEqual(n, nn) && std::abs(inPolygon.FaceVec[i].FacePlane.w - clippingPlane.w) < EPSILON)
 			continue;
 
 		PolygonFace clippedFace = PolygonFace::ClipWithPlane(inPolygon.FaceVec[i], clippingPlane, edgeVec);
@@ -648,7 +705,7 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 	if (edgeVec.size() < 3)
 		return outPolygon;
 
-	if (TRUE)
+	if (FALSE == inPolygon.GuaranteeConvex)
 	{
 		Vector3 cn = clippingPlane.Normal();
 		cn.Normalize();
@@ -714,7 +771,9 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 				{
 					if (FALSE == disconn)
 					{
-						OutputDebugStringWFormat(L"REVERSE\n");
+						return;
+						if (TRUE == closeFace.GuaranteeConvex)
+							OutputDebugStringWFormat(L"REVERSE\n");
 
 						/*for (int i = 0; i < closeFace.VertexVec.size() - 1; i++)
 						{
@@ -732,7 +791,8 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 					}
 					else
 					{
-						OutputDebugStringWFormat(L"REVERSE OUT\n");
+						if (TRUE == closeFace.GuaranteeConvex)
+							OutputDebugStringWFormat(L"REVERSE OUT\n");
 						// closeFace.ForceColor = true;
 						polygonClosed = true;
 					}
@@ -762,8 +822,43 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 			extractFace();
 			faceCnt++;
 		}
+	}
+	else
+	{
+		// Work only if convex.
+		std::vector<Vector3> intersectPointVec;
+		for (int e = 0; e < edgeVec.size(); e++)
+		{
+			for (int v = 0; v < edgeVec[e].VertexVec.size(); v++)
+			{
+				intersectPointVec.push_back(edgeVec[e].VertexVec[v]);
+			}
+		}
 
-		OutputDebugStringWFormat(L"Spitted as %d\n", faceCnt - 1);
+		// Calculate sector of clippingFace.
+		Vector3 centroid(0, 0, 0);
+		for (int i = 0; i < intersectPointVec.size(); i++)
+			centroid += intersectPointVec[i];
+		centroid /= intersectPointVec.size();
+		centroid += Vector3(EPSILON, EPSILON, EPSILON);
+
+		Vector3 n = clippingPlane.Normal();
+		n.Normalize();
+
+		std::sort(
+			intersectPointVec.begin() + 1, 
+			intersectPointVec.end(), 
+			[&](const Vector3& a, const Vector3& b) 
+			{ 
+				return GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, a - centroid, n) < 
+					GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, b - centroid, n);
+			});
+
+		PolygonFace face = { true };
+		for (int i = 0; i < intersectPointVec.size(); i++)
+			face.AddVertex(intersectPointVec[i]);
+
+		outPolygon.FaceVec.push_back(face);
 	}
 
 	return outPolygon;
@@ -1172,6 +1267,13 @@ VMACH::Polygon3D VMACH::GetBoxPolygon()
 		})
 	});
 
+	boxPolygon.FaceVec[0].AdjFaceVec = { 3, 4, 1, 5 };
+	boxPolygon.FaceVec[1].AdjFaceVec = { 0, 4, 2, 5 };
+	boxPolygon.FaceVec[2].AdjFaceVec = { 1, 4, 3, 5 };
+	boxPolygon.FaceVec[3].AdjFaceVec = { 2, 4, 0, 5 };
+	boxPolygon.FaceVec[4].AdjFaceVec = { 0, 3, 2, 1 };
+	boxPolygon.FaceVec[5].AdjFaceVec = { 0, 1, 2, 3 };
+
 	for (int f = 0; f < boxPolygon.FaceVec.size(); f++)
 		boxPolygon.FaceVec[f].Rewind();
 
@@ -1240,8 +1342,13 @@ void VMACH::Kdop::Calc(const std::vector<ConvexHullVertex>& vertices, const doub
 
 	for (KdopElement& kdopElement : elementVec)
 	{
-		kdopElement.MinPlane = Plane(kdopElement.MinVertex + kdopElement.MinPlane.Normal() * (maxAxisScale / planeGapInv), kdopElement.MinPlane.Normal());
-		kdopElement.MaxPlane = Plane(kdopElement.MaxVertex + kdopElement.MaxPlane.Normal() * (maxAxisScale / planeGapInv), kdopElement.MaxPlane.Normal());
+		Vector3 minPlaneNormal = kdopElement.MinPlane.Normal();
+		Vector3 maxPlaneNormal = kdopElement.MaxPlane.Normal();
+		minPlaneNormal.Normalize();
+		maxPlaneNormal.Normalize();
+
+		kdopElement.MinPlane = Plane(kdopElement.MinVertex + minPlaneNormal * (maxAxisScale / planeGapInv), minPlaneNormal);
+		kdopElement.MaxPlane = Plane(kdopElement.MaxVertex + maxPlaneNormal * (maxAxisScale / planeGapInv), maxPlaneNormal);
 	}
 }
 
@@ -1271,6 +1378,17 @@ void VMACH::Kdop::Calc(const Polygon3D& mesh)
 			}
 		}
 	}
+
+	/*for (KdopElement& kdopElement : elementVec)
+	{
+		Vector3 minPlaneNormal = kdopElement.MinPlane.Normal();
+		Vector3 maxPlaneNormal = kdopElement.MaxPlane.Normal();
+		minPlaneNormal.Normalize();
+		maxPlaneNormal.Normalize();
+
+		kdopElement.MinPlane = Plane(kdopElement.MinVertex - minPlaneNormal * 0.0001, minPlaneNormal);
+		kdopElement.MaxPlane = Plane(kdopElement.MaxVertex - maxPlaneNormal * 0.0001, maxPlaneNormal);
+	}*/
 }
 
 VMACH::Polygon3D VMACH::Kdop::ClipWithPolygon(const Polygon3D& polygon) const

@@ -63,6 +63,7 @@ private:
 	{
 		INT                 ICHIncludePointLimit = 100;
 		FLOAT               ACHPlaneGapInverse = 2000.0f;
+        INT                 Seed = 12345;
 	};
 
 	struct DecompositionResult
@@ -87,7 +88,7 @@ private:
     void OnDeviceLost();
 
     // Core feature functions
-    void CreateACH(
+    void DoFracture(
         _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
         _In_ const std::vector<uint32_t>& visualMeshIndices,
         _Out_ std::vector<VertexNormalColor>& achVertexData, 

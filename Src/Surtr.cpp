@@ -232,7 +232,7 @@ void Surtr::UpdateMesh()
 		auto achVertexData = std::vector<VertexNormalColor>();
 		auto achIndexData = std::vector<uint32_t>();
 
-        CreateACH(m_meshVec[0]->VertexData, m_meshVec[0]->IndexData, achVertexData, achIndexData);
+        DoFracture(m_meshVec[0]->VertexData, m_meshVec[0]->IndexData, achVertexData, achIndexData);
         
         delete m_meshVec[2];
         m_meshVec[2] = PrepareMeshResource(achVertexData, achIndexData);
@@ -434,7 +434,8 @@ void Surtr::Render()
                     ImGui::Text("[Arguments]");
                     ImGui::SliderInt("ICH Included Points", &m_decompositionArgument.ICHIncludePointLimit, 20, 1000);
                     ImGui::SliderFloat("ACH Plane Gap Inverse", &m_decompositionArgument.ACHPlaneGapInverse, 0.0f, 10000.0f);
-					if (ImGui::Button("Regenerate!")) { m_executeNextStep = true; }
+                    ImGui::SliderInt("Seed", &m_decompositionArgument.Seed, 0, 100000);
+                    if (ImGui::Button("Regenerate!")) { m_executeNextStep = true; }
 
                     ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
@@ -1214,7 +1215,7 @@ void Surtr::CreateCommandListDependentResources()
 
 	std::vector<VertexNormalColor> convexHullVertexData;
 	std::vector<uint32_t> convexHullIndexData;
-	CreateACH(objectVertexData, objectIndexData, convexHullVertexData, convexHullIndexData);
+    DoFracture(objectVertexData, objectIndexData, convexHullVertexData, convexHullIndexData);
 
 	if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
 	{
@@ -1412,7 +1413,7 @@ void loop(std::vector<VMACH::PolygonFace>& faceVec, VMACH::PolygonFace res, cons
     OutputDebugStringWFormat(L"%d\n", counter);
 }
 
-void Surtr::CreateACH(
+void Surtr::DoFracture(
     _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
     _In_ const std::vector<uint32_t>& visualMeshIndices, 
     _Out_ std::vector<VertexNormalColor>& achVertexData, 
@@ -1532,6 +1533,9 @@ void Surtr::CreateACH(
 
     const auto renderPolygon = [&achVertexData, &achIndexData] (VMACH::Polygon3D polygon, const Vector3& center, const int scalar)
     {
+        if (polygon.FaceVec.size() == 0)
+            return;
+
 		double a, b, c;
 		a = rnd(); b = rnd(); c = rnd();
 		XMFLOAT3 color(a, b, c);
@@ -1653,12 +1657,21 @@ void Surtr::CreateACH(
     }
 
 	// 11. Generate Fracture Pattern.
-	std::vector<VMACH::Polygon3D> fractureVoroPolyVec = GenerateFracturePattern(64, 0.1);
+	std::vector<VMACH::Polygon3D> fractureVoroPolyVec = GenerateFracturePattern(64, 0.01);
 	for (int i = 0; i < fractureVoroPolyVec.size(); i++)
-	{
-		fractureVoroPolyVec[i].Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)) * 1.75f);
-		fractureVoroPolyVec[i].Translate(bbCenter);
-	}
+        fractureVoroPolyVec[i].Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)) * 2);
+
+    // Alignment.
+    const Vector3 impactPoint = Vector3(0, 6, 4);
+    {
+		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
+		boxPoly.Scale(0.5);
+		boxPoly.Translate(impactPoint);
+		boxPoly.Render(achVertexData, achIndexData, Vector3(1, 0, 0));
+    }
+
+	for (int i = 0; i < fractureVoroPolyVec.size(); i++)
+        fractureVoroPolyVec[i].Translate(impactPoint);
 
     // 12. Apply fracture pattern.
 	std::vector<std::vector<VMACH::Compound>> secondCompoundVec(initialCompundVec.size());
@@ -1688,7 +1701,7 @@ void Surtr::CreateACH(
 		for (int j = 0; j < secondCompoundVec[i].size(); j++)
 		{
             renderPolygon(secondCompoundVec[i][j].convexCell, bbCenter, 0);
-            // renderPolygon(secondCompoundVec[i][j].visualMesh, bbCenter, 0);
+			// renderPolygon(secondCompoundVec[i][j].visualMesh, bbCenter, 0);
 		}
 	}
 }
@@ -1721,7 +1734,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cell
 {
 	std::vector<DirectX::SimpleMath::Vector3> cellPointVec;
 
-	std::mt19937 gen(12345);
+	std::mt19937 gen(m_decompositionArgument.Seed);
 	std::uniform_real_distribution<double> directionUniformDist(-1.0, 1.0);
 	std::exponential_distribution<double> lengthExpDist(1.0 / mean);
 
@@ -1747,7 +1760,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount)
 {
     std::vector<DirectX::SimpleMath::Vector3> cellPointVec;
 
-	std::mt19937 gen(12345);
+	std::mt19937 gen(m_decompositionArgument.Seed);
 	std::uniform_real_distribution<double> uniformDist(-0.5, 0.5);
 
 	double x, y, z;

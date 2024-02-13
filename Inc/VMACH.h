@@ -21,6 +21,7 @@ namespace VMACH
 		Plane						FacePlane;
 		bool						FacePlaneConstructed;
 		bool						ForceColor;
+		std::vector<int>			AdjFaceVec;
 
 		PolygonFace(bool _guranteeConvex) : 
 			GuaranteeConvex(_guranteeConvex), FacePlaneConstructed(false), ForceColor(false) {}
@@ -60,7 +61,7 @@ namespace VMACH
 		bool						GuaranteeConvex;
 		std::vector<PolygonFace>	FaceVec;
 
-		Polygon3D(bool _guranteeConvex) : GuaranteeConvex(_guranteeConvex), FaceVec() {}
+		Polygon3D(bool _guranteeConvex) : GuaranteeConvex(_guranteeConvex) {}
 		Polygon3D(bool _guranteeConvex, std::vector<PolygonFace> _faceVec) : GuaranteeConvex(_guranteeConvex), FaceVec(_faceVec) {}
 
 		Vector3 GetCentroid() const;
