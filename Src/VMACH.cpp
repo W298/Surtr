@@ -456,22 +456,31 @@ void VMACH::Polygon3D::AddFace(const PolygonFace& newFace)
 void VMACH::Polygon3D::Translate(const Vector3& vector)
 {
 	for (int f = 0; f < FaceVec.size(); f++)
+	{
 		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
 			FaceVec[f].VertexVec[v] += vector;
+		FaceVec[f].ConstructFacePlane();
+	}
 }
 
 void VMACH::Polygon3D::Scale(const float& scalar)
 {
 	for (int f = 0; f < FaceVec.size(); f++)
+	{
 		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
 			FaceVec[f].VertexVec[v] *= scalar;
+		FaceVec[f].ConstructFacePlane();
+	}
 }
 
 void VMACH::Polygon3D::Scale(const Vector3& vector)
 {
 	for (int f = 0; f < FaceVec.size(); f++)
+	{
 		for (int v = 0; v < FaceVec[f].VertexVec.size(); v++)
 			FaceVec[f].VertexVec[v] *= vector;
+		FaceVec[f].ConstructFacePlane();
+	}
 }
 
 bool intersection(const Vector3& a2, const Vector3& a1, const Vector3& b2, const Vector3& b1, Vector3& res)
@@ -779,6 +788,15 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPolygon(const Polygon3D& inPolygon, c
 VMACH::ConvexHull::ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt) 
 	: m_pointCloud(pointCloud), m_limitCnt(limitCnt)
 {
+	m_pointVolume = std::vector<float>(m_pointCloud.size(), 0.0f);
+	CreateConvexHull();
+}
+
+VMACH::ConvexHull::ConvexHull(const std::vector<Vector3>& pointCloud, uint32_t limitCnt)
+{
+	m_pointCloud.resize(pointCloud.size());
+	std::transform(pointCloud.begin(), pointCloud.end(), m_pointCloud.begin(), [](const Vector3& v3) { return v3; });
+	
 	m_pointVolume = std::vector<float>(m_pointCloud.size(), 0.0f);
 	CreateConvexHull();
 }

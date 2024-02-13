@@ -93,6 +93,18 @@ private:
         _Out_ std::vector<VertexNormalColor>& achVertexData, 
         _Out_ std::vector<uint32_t>& achIndexData);
 
+    std::vector<DirectX::SimpleMath::Vector3> GenerateICHNormal(
+        _In_ const std::vector<DirectX::SimpleMath::Vector3> vertices,
+        _In_ const int ichIncludePointLimit);
+
+	std::vector<DirectX::SimpleMath::Vector3> GenerateICHNormal(
+		_In_ const VMACH::Polygon3D polygon,
+		_In_ const int ichIncludePointLimit);
+
+    std::vector<VMACH::Polygon3D> GenerateFracturePattern(
+        _In_ const int cellCount,
+        _In_ const double mean);
+
     void TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
     void TestECHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
 
@@ -118,6 +130,9 @@ private:
         Mesh* mesh, 
         _In_ const std::vector<VertexNormalColor>& vertices, 
         _In_ const std::vector<uint32_t>& indices);
+
+	std::vector<VMACH::Polygon3D> GenerateVoronoi(_In_ const int cellCount);
+	std::vector<VMACH::Polygon3D> GenerateVoronoi(_In_ const std::vector<DirectX::SimpleMath::Vector3>& cellPointVec);
 
     // Constants
     static constexpr DirectX::XMVECTORF32               DEFAULT_UP_VECTOR       = { 0.f, 1.f, 0.f, 0.f };

@@ -23,9 +23,9 @@ namespace VMACH
 		bool						ForceColor;
 
 		PolygonFace(bool _guranteeConvex) : 
-			GuaranteeConvex(_guranteeConvex), VertexVec(), FacePlaneConstructed(false) {}
+			GuaranteeConvex(_guranteeConvex), FacePlaneConstructed(false), ForceColor(false) {}
 		PolygonFace(bool _guranteeConvex, std::vector<Vector3> _vertexVec) : 
-			GuaranteeConvex(_guranteeConvex), VertexVec(_vertexVec) { ConstructFacePlane(); }
+			GuaranteeConvex(_guranteeConvex), VertexVec(_vertexVec), ForceColor(false) { ConstructFacePlane(); }
 
 		bool operator==(const PolygonFace& other);
 
@@ -120,6 +120,7 @@ namespace VMACH
 	{
 	public:
 		ConvexHull(const std::vector<ConvexHullVertex>& pointCloud, uint32_t limitCnt);
+		ConvexHull(const std::vector<Vector3>& pointCloud, uint32_t limitCnt);
 		~ConvexHull() = default;
 
 		bool Contains(const ConvexHullVertex& point) const;

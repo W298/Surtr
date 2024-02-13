@@ -1530,6 +1530,20 @@ void Surtr::CreateACH(
         }*/
     };
 
+    const auto renderPolygon = [&achVertexData, &achIndexData] (VMACH::Polygon3D polygon, const Vector3& center, const int scalar)
+    {
+		double a, b, c;
+		a = rnd(); b = rnd(); c = rnd();
+		XMFLOAT3 color(a, b, c);
+
+		Vector3 outer = polygon.GetCentroid() - center;
+		outer.Normalize();
+		outer *= scalar;
+
+        polygon.Translate(outer);
+        polygon.Render(achVertexData, achIndexData, color);
+    };
+
     // 1. Create intermediate convex hull with limit count.
     std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
     std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.Position; });
@@ -1577,30 +1591,28 @@ void Surtr::CreateACH(
     bbPolygon.Scale(2.0);
     bbPolygon.Translate(bbCenter);
 
-    // 7. Clip bounding box polygon with clipping faces.
+    // 7. Clip ACH polygon with clipping faces.
     VMACH::Polygon3D achPoly = achKdop.ClipWithPolygon(bbPolygon);
     // achPoly.Render(achVertexData, achIndexData);
 
-	// Check ACH contains all points or not.
+	// #TEST Check ACH contains all points or not.
     m_decompositionResult.ACHErrorPointCnt = 0;
 	for (int i = 0; i < visualMeshVertices.size(); i++)
 	{
 		Vector3 vertPos = visualMeshVertices[i].Position;
 
-		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
-		boxPoly.Scale(0.01);
-		boxPoly.Translate(vertPos);
-
         bool isContain = achPoly.Contains(vertPos);
         if (FALSE == isContain)
             m_decompositionResult.ACHErrorPointCnt++;
 
-		// boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));
+		/*VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
+		boxPoly.Scale(0.01);
+		boxPoly.Translate(vertPos);
+		boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));*/
 	}
 
-	// Generate mesh polygon. That can be non-convex.
+	// 8. Generate mesh polygon. That can be non-convex.
     VMACH::Polygon3D meshPolygon = { false };
-
 	for (uint32_t i = 0; i < visualMeshIndices.size(); i += 3)
 	{
         VMACH::PolygonFace face = { true };
@@ -1611,41 +1623,157 @@ void Surtr::CreateACH(
 		meshPolygon.AddFace(face);
 	}
 
-    // #TEST
-	/*const auto c2 =
-		VMACH::Polygon3D::ClipFace(
-			meshPolygon,
-			VMACH::PolygonFace(true, { Vector3(-100, -100, 0), Vector3(-100, 100, 0), Vector3(100, 100, 0), Vector3(100, -100, 0) }));
+    // 9. Voronoi diagram generation for initial decomposition.
+    std::vector<VMACH::Polygon3D> voroPolyVec = GenerateVoronoi(64);
+    for (int i = 0; i < voroPolyVec.size(); i++)
+    {
+        voroPolyVec[i].Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
+        voroPolyVec[i].Translate(bbCenter);
+    }
 
-	c2.Render(achVertexData, achIndexData);
+    // 10. Generate initial compund.    
+    std::vector<VMACH::Compound> initialCompundVec;
+    for (int i = 0; i < voroPolyVec.size(); i++)
+    {
+        VMACH::Compound comp;
+        
+        comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
+        if (comp.convexCell.FaceVec.size() == 0)
+            continue;
+        comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(meshPolygon, voroPolyVec[i]);
 
-	return;*/
+        // Re-fitting.
+		VMACH::Kdop kdop(ichFaceNormalVec);
+		kdop.Calc(comp.visualMesh);
+		comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);
 
-    // 8. Voronoi diagram generation.
-    Vector3 voroBBMinVec(minX, minY, minZ);
-    Vector3 voroBBMaxVec(maxX, maxY, maxZ);
-    const int cellCount = 32;
+        // renderPolygon(comp.convexCell, bbCenter, 0);
+		
+        initialCompundVec.push_back(comp);
+    }
 
-	voro::container voroCon(
-        voroBBMinVec.x, voroBBMaxVec.x, 
-        voroBBMinVec.y, voroBBMaxVec.y, 
-        voroBBMinVec.z, voroBBMaxVec.z, 2, 2, 2, false, false, false, 8);
-
-	int i = 0;
-	double x, y, z;
-	while (i < cellCount)
+	// 11. Generate Fracture Pattern.
+	std::vector<VMACH::Polygon3D> fractureVoroPolyVec = GenerateFracturePattern(64, 0.1);
+	for (int i = 0; i < fractureVoroPolyVec.size(); i++)
 	{
-		x = voroBBMinVec.x + rnd() * (voroBBMaxVec.x - voroBBMinVec.x) * 0.75f;
-		y = voroBBMinVec.y + rnd() * (voroBBMaxVec.y - voroBBMinVec.y) * 0.75f;
-		z = voroBBMinVec.z + rnd() * (voroBBMaxVec.z - voroBBMinVec.z) * 0.75f;
-		if (voroCon.point_inside(x, y, z))
+		fractureVoroPolyVec[i].Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)) * 1.75f);
+		fractureVoroPolyVec[i].Translate(bbCenter);
+	}
+
+    // 12. Apply fracture pattern.
+	std::vector<std::vector<VMACH::Compound>> secondCompoundVec(initialCompundVec.size());
+	for (int j = 0; j < fractureVoroPolyVec.size(); j++)
+	{
+		for (int i = 0; i < initialCompundVec.size(); i++)
 		{
-			voroCon.put(i, x, y, z);
-			i++;
+			VMACH::Compound comp;
+			comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].convexCell, fractureVoroPolyVec[j]);
+			if (comp.convexCell.FaceVec.size() == 0)
+				continue;
+
+			// #INEFFICIENT!
+			comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].visualMesh, fractureVoroPolyVec[j]);
+
+			// Re-fitting.
+			/*VMACH::Kdop kdop(ichFaceNormalVec);
+			kdop.Calc(comp.visualMesh);
+			comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);*/
+
+			secondCompoundVec[i].push_back(comp);
 		}
 	}
 
-    std::vector<VMACH::Polygon3D> voroPolyVec;
+	for (int i = 0; i < secondCompoundVec.size(); i++)
+	{
+		for (int j = 0; j < secondCompoundVec[i].size(); j++)
+		{
+            renderPolygon(secondCompoundVec[i][j].convexCell, bbCenter, 0);
+            // renderPolygon(secondCompoundVec[i][j].visualMesh, bbCenter, 0);
+		}
+	}
+}
+
+std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3> vertices, _In_ const int ichIncludePointLimit)
+{
+	VMACH::ConvexHull ich(vertices, ichIncludePointLimit);
+
+	std::vector<Vector3> ichFaceNormalVec;
+	for (const VMACH::ConvexHullFace& f : ich.GetFaces())
+	{
+		Vector3 normal = (f.Vertices[1] - f.Vertices[0]).Cross(f.Vertices[2] - f.Vertices[0]);
+		normal.Normalize();
+		ichFaceNormalVec.push_back(normal);
+	}
+
+    return ichFaceNormalVec;
+}
+
+std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const VMACH::Polygon3D polygon, _In_ const int ichIncludePointLimit)
+{
+    std::vector<Vector3> vertices;
+    for (int f = 0; f < polygon.FaceVec.size(); f++)
+        vertices.insert(vertices.end(), polygon.FaceVec[f].VertexVec.begin(), polygon.FaceVec[f].VertexVec.end());
+
+    return GenerateICHNormal(vertices, ichIncludePointLimit);
+}
+
+std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean)
+{
+	std::vector<DirectX::SimpleMath::Vector3> cellPointVec;
+
+	std::mt19937 gen(12345);
+	std::uniform_real_distribution<double> directionUniformDist(-1.0, 1.0);
+	std::exponential_distribution<double> lengthExpDist(1.0 / mean);
+
+	for (int i = 0; i < cellCount; i++)
+	{
+		double len = std::max(std::min(lengthExpDist(gen), 0.5), 1e-12);
+
+		double x = directionUniformDist(gen);
+		double y = directionUniformDist(gen);
+		double z = directionUniformDist(gen);
+
+		Vector3 v = Vector3(x, y, z);
+		v.Normalize();
+		v *= len;
+
+		cellPointVec.push_back(v);
+	}
+
+    return GenerateVoronoi(cellPointVec);
+}
+
+std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount)
+{
+    std::vector<DirectX::SimpleMath::Vector3> cellPointVec;
+
+	std::mt19937 gen(12345);
+	std::uniform_real_distribution<double> uniformDist(-0.5, 0.5);
+
+	double x, y, z;
+    for (int i = 0; i < cellCount; i++)
+    {
+		x = uniformDist(gen);
+        y = uniformDist(gen);
+        z = uniformDist(gen);
+		cellPointVec.emplace_back(x, y, z);
+    }
+
+    return GenerateVoronoi(cellPointVec);
+}
+
+std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const std::vector<DirectX::SimpleMath::Vector3>& cellPointVec)
+{
+	std::vector<VMACH::Polygon3D> voroPolyVec;
+
+	voro::container voroCon(
+		-0.5, +0.5,
+        -0.5, +0.5,
+        -0.5, +0.5,
+		8, 8, 8, false, false, false, 8);
+
+    for (int i = 0; i < cellPointVec.size(); i++)
+        voroCon.put(i, cellPointVec[i].x, cellPointVec[i].y, cellPointVec[i].z);
 
 	int id;
 	voro::voronoicell_neighbor voroCell;
@@ -1653,16 +1781,17 @@ void Surtr::CreateACH(
 
 	voro::c_loop_all cl(voroCon);
 	int dimension = 0;
-	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl)) 
-    {
+	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
+	{
 		dimension += 1;
 	} while (cl.inc());
 
+    double x, y, z;
 	int counter = 0;
-	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl)) 
-    {
+	if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
+	{
 		cl.pos(x, y, z);
-        id = cl.pid();
+		id = cl.pid();
 
 		std::vector<int> cellFaceVec;
 		std::vector<double> cellVertices;
@@ -1671,219 +1800,34 @@ void Surtr::CreateACH(
 		voroCell.face_vertices(cellFaceVec);
 		voroCell.vertices(x, y, z, cellVertices);
 
-        VMACH::Polygon3D voroPoly = { true };
+		VMACH::Polygon3D voroPoly = { true };
 
-        int cur = 0;
-        while (cur < cellFaceVec.size())
-        {
-            VMACH::PolygonFace face = { true };
-            
-            int cnt = cellFaceVec[cur];
-            for (int i = 0; i < cnt; i++)
-            {
-                int vertIndex = cellFaceVec[cur + i + 1];
-                face.AddVertex(Vector3(
-                    cellVertices[3 * vertIndex], 
-                    cellVertices[3 * vertIndex + 1], 
-                    cellVertices[3 * vertIndex + 2]));
-            }
-            cur += cnt + 1;
+		int cur = 0;
+		while (cur < cellFaceVec.size())
+		{
+			VMACH::PolygonFace face = { true };
 
-            face.Rewind();
-            voroPoly.AddFace(face);
-        }
+			int cnt = cellFaceVec[cur];
+			for (int i = 0; i < cnt; i++)
+			{
+				int vertIndex = cellFaceVec[cur + i + 1];
+				face.AddVertex(Vector3(
+					cellVertices[3 * vertIndex],
+					cellVertices[3 * vertIndex + 1],
+					cellVertices[3 * vertIndex + 2]));
+			}
+			cur += cnt + 1;
 
-        voroPolyVec.push_back(voroPoly);
+			face.Rewind();
+			voroPoly.AddFace(face);
+		}
+
+		voroPolyVec.push_back(voroPoly);
 
 		counter += 1;
 	} while (cl.inc());
 
-	// Render voro poly.
-	/*for (int i = 0; i < voroPolyVec.size(); i++)
-	{
-		double a, b, c;
-		a = rnd(); b = rnd(); c = rnd();
-		XMFLOAT3 color(a, b, c);
-
-		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
-		outer.Normalize();
-		outer *= 4;
-
-		voroPolyVec[i].Translate(outer);
-		voroPolyVec[i].Render(achVertexData, achIndexData, color);
-	}*/
-
-    std::vector<VMACH::Compound> initialCompundVec;
-
-    // Render clipped convex.
-    for (int i = 0; i < voroPolyVec.size(); i++)
-    {
-		double a, b, c;
-		a = rnd(); b = rnd(); c = rnd();
-		XMFLOAT3 color(a, b, c);
-
-        VMACH::Compound comp;
-        comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
-        if (comp.convexCell.FaceVec.size() == 0)
-            continue;
-
-        comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(meshPolygon, voroPolyVec[i]);
-        // comp.visualMesh.Render(achVertexData, achIndexData);
-
-		Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
-		outer.Normalize();
-		outer *= 8;
-
-        // comp.convexCell.Translate(outer);
-        // comp.convexCell.Render(achVertexData, achIndexData, color);
-        
-        // comp.visualMesh.Translate(outer);
-        // comp.visualMesh.Render(achVertexData, achIndexData, color);
-
-        // Re-fitting.
-		if (comp.convexCell.FaceVec.size() != 0)
-		{
-            VMACH::Kdop kdop(ichFaceNormalVec);
-            kdop.Calc(comp.visualMesh);
-
-            OutputDebugStringW(L"SEE BELOW\n");
-            comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);
-            // comp.convexCell.Render(achVertexData, achIndexData, color);
-		}
-
-        initialCompundVec.push_back(comp);
-    }
-
-    {
-		// Fracture Pattern Generation.
-		Vector3 voroBBMinVec(minX * 1.75 - 1, minY * 1.75 - 6, minZ * 1.75 + 1);
-		Vector3 voroBBMaxVec(maxX * 1.75 - 1, maxY * 1.75 - 6, maxZ * 1.75 + 1);
-		const int cellCount = 32;
-
-		voro::container voroCon(
-			voroBBMinVec.x, voroBBMaxVec.x,
-			voroBBMinVec.y, voroBBMaxVec.y,
-			voroBBMinVec.z, voroBBMaxVec.z, 2, 2, 2, false, false, false, 8);
-
-		int i = 0;
-		double x, y, z;
-		while (i < cellCount)
-		{
-            x = voroBBMinVec.x + rnd() * (voroBBMaxVec.x - voroBBMinVec.x);
-            y = voroBBMinVec.y + rnd() * (voroBBMaxVec.y - voroBBMinVec.y);
-            z = voroBBMinVec.z + rnd() * (voroBBMaxVec.z - voroBBMinVec.z);
-			if (voroCon.point_inside(x, y, z))
-			{
-				voroCon.put(i, x, y, z);
-				i++;
-			}
-		}
-
-		std::vector<VMACH::Polygon3D> voroPolyVec;
-
-		int id;
-		voro::voronoicell_neighbor voroCell;
-		std::vector<int> neighborVec;
-
-		voro::c_loop_all cl(voroCon);
-		int dimension = 0;
-		if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
-		{
-			dimension += 1;
-		} while (cl.inc());
-
-		int counter = 0;
-		if (cl.start()) do if (voroCon.compute_cell(voroCell, cl))
-		{
-			cl.pos(x, y, z);
-			id = cl.pid();
-
-			std::vector<int> cellFaceVec;
-			std::vector<double> cellVertices;
-
-			voroCell.neighbors(neighborVec);
-			voroCell.face_vertices(cellFaceVec);
-			voroCell.vertices(x, y, z, cellVertices);
-
-			VMACH::Polygon3D voroPoly = { true };
-
-			int cur = 0;
-			while (cur < cellFaceVec.size())
-			{
-				VMACH::PolygonFace face = { true };
-
-				int cnt = cellFaceVec[cur];
-				for (int i = 0; i < cnt; i++)
-				{
-					int vertIndex = cellFaceVec[cur + i + 1];
-					face.AddVertex(Vector3(
-						cellVertices[3 * vertIndex],
-						cellVertices[3 * vertIndex + 1],
-						cellVertices[3 * vertIndex + 2]));
-				}
-				cur += cnt + 1;
-
-				face.Rewind();
-				voroPoly.AddFace(face);
-			}
-
-			voroPolyVec.push_back(voroPoly);
-
-			counter += 1;
-		} while (cl.inc());
-
-        for (int i = 0; i < voroPolyVec.size(); i++)
-		{
-			double a, b, c;
-			a = rnd(); b = rnd(); c = rnd();
-			XMFLOAT3 color(a, b, c);
-
-			Vector3 outer = voroPolyVec[i].GetCentroid() - bbCenter;
-			outer.Normalize();
-			outer *= 4;
-
-			//voroPolyVec[i].Translate(outer);
-			//voroPolyVec[i].Render(achVertexData, achIndexData, color);
-		}
-
-        std::vector<std::vector<VMACH::Compound>> secondCompoundVec(initialCompundVec.size());
-
-		for (int j = 0; j < voroPolyVec.size(); j++)
-		{
-			for (int i = 0; i < initialCompundVec.size(); i++)
-			{
-				VMACH::Compound comp;
-				comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].convexCell, voroPolyVec[j]);
-				if (comp.convexCell.FaceVec.size() == 0)
-					continue;
-
-                // #INEFFICIENT!
-                comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].visualMesh, voroPolyVec[j]);
-
-				secondCompoundVec[i].push_back(comp);
-			}
-		}
-
-        for (int i = 0; i < secondCompoundVec.size(); i++)
-        {
-            for (int j = 0; j < secondCompoundVec[i].size(); j++)
-            {
-				double a, b, c;
-				a = rnd(); b = rnd(); c = rnd();
-				XMFLOAT3 color(a, b, c);
-
-				Vector3 outer = secondCompoundVec[i][j].convexCell.GetCentroid() - bbCenter;
-				outer.Normalize();
-				outer *= 4;
-
-                // secondCompoundVec[i][j].convexCell.Translate(outer);
-                // secondCompoundVec[i][j].convexCell.Render(achVertexData, achIndexData, color);
-
-                secondCompoundVec[i][j].visualMesh.Translate(outer);
-                secondCompoundVec[i][j].visualMesh.Render(achVertexData, achIndexData, color);
-            }
-        }
-    }
+	return voroPolyVec;
 }
 
 void Surtr::TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices)
