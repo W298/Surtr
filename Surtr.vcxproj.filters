@@ -90,6 +90,9 @@
     <ClInclude Include="Inc\DT3D.h">
       <Filter>Inc</Filter>
     </ClInclude>
+    <ClInclude Include="Inc\Poly.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
@@ -132,6 +135,9 @@
     <ClCompile Include="Src\VMACH.cpp">
       <Filter>Src</Filter>
     </ClCompile>
+    <ClCompile Include="Src\Poly.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="Shaders\WireframePS.hlsl">
@@ -166,5 +172,6 @@
     <None Include="ThirdParty\Inc\SimpleMath.inl">
       <Filter>ThirdParty\Inc</Filter>
     </None>
+    <None Include=".editorconfig" />
   </ItemGroup>
 </Project>

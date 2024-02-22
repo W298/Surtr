@@ -114,6 +114,7 @@
     <ClInclude Include="Inc\DT3D.h" />
     <ClInclude Include="Inc\Mesh.h" />
     <ClInclude Include="Inc\pch.h" />
+    <ClInclude Include="Inc\Poly.h" />
     <ClInclude Include="Inc\ShadowMap.h" />
     <ClInclude Include="Inc\Surtr.h" />
     <ClInclude Include="Inc\SurtrArgument.h" />
@@ -138,6 +139,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Src\Poly.cpp" />
     <ClCompile Include="Src\ShadowMap.cpp" />
     <ClCompile Include="Src\Surtr.cpp" />
     <ClCompile Include="Src\VMACH.cpp" />
@@ -223,6 +225,7 @@
     </FxCompile>
   </ItemGroup>
   <ItemGroup>
+    <None Include=".editorconfig" />
     <None Include="Shaders\Shader.hlsli" />
     <None Include="Shaders\Shadow.hlsli" />
     <None Include="ThirdParty\Inc\SimpleMath.inl" />

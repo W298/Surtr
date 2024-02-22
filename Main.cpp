@@ -92,6 +92,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         const auto* raw = reinterpret_cast<RAWINPUT*>(g_lpb);
         if (raw->header.dwType == RIM_TYPEMOUSE)
             g_surtr->OnMouseMove(raw->data.mouse.lLastX, raw->data.mouse.lLastY);
+
+        if (raw->data.mouse.usButtonFlags == RI_MOUSE_BUTTON_2_DOWN)
+            g_surtr->OnMouseDown();
         break;
     }
 
@@ -229,7 +232,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, 
 
         g_surtr->InitializeD3DResources(
             hwnd, rc.right - rc.left, rc.bottom - rc.top, 
-            arguments.SubDivideCount, 
+            arguments.ModelIndex, 
             arguments.ShadowMapSize, 
             arguments.FullScreenMode);
     }

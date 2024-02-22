@@ -10,6 +10,7 @@ extern void ExitGame() noexcept;
 using namespace DirectX;
 using namespace SimpleMath;
 using Microsoft::WRL::ComPtr;
+using Poly::Polyhedron;
 
 const auto rnd = []() { return double(rand() * 0.75) / RAND_MAX; };
 
@@ -36,14 +37,30 @@ Surtr::~Surtr()
         DX::ThrowIfFailed(m_swapChain->SetFullscreenState(FALSE, NULL));
 }
 
+void meshIslandLoop(const int index, const Polyhedron& vm, std::set<int>& group)
+{
+    std::vector<int> search;
+	for (const int iAdj : vm[index].NeighborVertexVec)
+	{
+		const auto res = group.insert(iAdj);
+		if (TRUE == res.second)
+            search.push_back(iAdj);
+	}
+
+    for (const int iSearch : search)
+        meshIslandLoop(iSearch, vm, group);
+}
+
 // Initialize the Direct3D resources required to run.
-void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subDivideCount, UINT shadowMapSize, BOOL fullScreenMode)
+void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT modelIndex, UINT shadowMapSize, BOOL fullScreenMode)
 {
     m_window = window;
     m_outputWidth = std::max(width, 1);
     m_outputHeight = std::max(height, 1);
     m_aspectRatio = static_cast<float>(m_outputWidth) / static_cast<float>(m_outputHeight);
     m_fullScreenMode = fullScreenMode;
+
+    m_modelIndex = modelIndex;
 
     // Initialize values.
     m_isFlightMode = true;
@@ -63,7 +80,7 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT subD
     m_camRight = DEFAULT_RIGHT_VECTOR;
     m_camYaw = -XM_PI;
     m_camPitch = 0.0f;
-    m_camPosition = XMVectorSet(0.0f, 5.0f, 10.0f, 0.0f);
+    m_camPosition = XMVectorSet(3.0f, 7.0f, 18.0f, 0.0f);
     m_camLookTarget = XMVectorSet(0.0f, 0.0f, 0.0f, 0.0f);
     m_camMoveSpeed = 5.0f;
     m_camRotateSpeed = 0.5f;
@@ -141,6 +158,47 @@ void Surtr::OnMouseMove(int x, int y)
     POINT pt = { m_outputWidth / 2, m_outputHeight / 2 };
     ClientToScreen(m_window, &pt);
     SetCursorPos(pt.x, pt.y);
+}
+
+void Surtr::OnMouseDown()
+{
+    if (m_isFlightMode)
+        return;
+
+	POINT pt;
+	GetCursorPos(&pt);
+	ScreenToClient(m_window, &pt);
+
+	double x = ((double)pt.x / m_outputWidth) * 2 - 1;
+	double y = 1 - ((double)pt.y / m_outputHeight) * 2;
+
+	Vector3 clipSpaceCoord = Vector3(x, y, 0);
+	Vector3 viewSpaceCoord = XMVector3TransformCoord(clipSpaceCoord, XMMatrixInverse(nullptr, m_projectionMatrix));
+	Vector3 worldSpaceCoord = XMVector3TransformCoord(viewSpaceCoord, XMMatrixInverse(nullptr, m_viewMatrix));
+
+	Vector3 rayDir = worldSpaceCoord - Vector3(m_camPosition);
+	rayDir.Normalize();
+
+	Ray ray(m_camPosition, rayDir);
+
+	bool hit = false;
+	float minDist = std::numeric_limits<float>::max();
+
+	for (const VMACH::Polygon3D& convex : m_convexVec)
+	{
+		float dist;
+		if (TRUE == ConvexRayIntersection(convex, ray, dist))
+		{
+			if (dist < minDist)
+			{
+				hit = true;
+				minDist = dist;
+			}
+		}
+	}
+
+	if (TRUE == hit)
+		m_decompositionArgument.ImpactPosition = ray.position + ray.direction * (minDist + 0.01);
 }
 
 // Updates the world.
@@ -324,7 +382,7 @@ void Surtr::Render()
 			
             for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
+				if (Mesh::RenderOptionType::NOT_RENDER ^ m_meshVec[i]->RenderOption)
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
         }
@@ -435,6 +493,8 @@ void Surtr::Render()
                     ImGui::SliderInt("ICH Included Points", &m_decompositionArgument.ICHIncludePointLimit, 20, 1000);
                     ImGui::SliderFloat("ACH Plane Gap Inverse", &m_decompositionArgument.ACHPlaneGapInverse, 0.0f, 10000.0f);
                     ImGui::SliderInt("Seed", &m_decompositionArgument.Seed, 0, 100000);
+                    ImGui::SliderFloat("Impact Radius", &m_decompositionArgument.ImpactRadius, 0.1f, 10.0f);
+                    ImGui::Text("Impact Point: %.3f %.3f %.3f", m_decompositionArgument.ImpactPosition.x, m_decompositionArgument.ImpactPosition.y, m_decompositionArgument.ImpactPosition.z);
                     if (ImGui::Button("Regenerate!")) { m_executeNextStep = true; }
 
                     ImGui::Dummy(ImVec2(0.0f, 10.0f));
@@ -1191,13 +1251,37 @@ void Surtr::CreateCommandListDependentResources()
     std::vector<VertexNormalColor> objectVertexData;
     std::vector<uint32_t> objectIndexData;
 
-#if RENDER_OBJECT == 0
-    LoadModelData("Resources\\Models\\lucy.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 20, 0), objectVertexData, objectIndexData);
-#elif RENDER_OBJECT == 1
-    LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
-#else
-    LoadModelData("Resources\\Models\\lowpoly-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
-#endif
+    switch (m_modelIndex)
+    {
+    case 0:
+        LoadModelData("Resources\\Models\\lucy.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 20, 0), objectVertexData, objectIndexData);
+        break;
+    case 1:
+        LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+        break;
+    case 2:
+        LoadModelData("Resources\\Models\\lowpoly-bunny-closed.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+        break;
+    case 3:
+        LoadModelData("Resources\\Models\\cube.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+        break;
+    case 4:
+        LoadModelData("Resources\\Models\\pump.obj", XMFLOAT3(0.15, 0.15, 0.15), XMFLOAT3(0, 4, -0.85), objectVertexData, objectIndexData);
+        break;
+    case 5:
+        LoadModelData("Resources\\Models\\cylinder.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+        break;
+    default:
+        LoadModelData("Resources\\Models\\lowpoly-bunny-closed.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+        break;
+    }
+
+	std::vector<VertexNormalColor> sphv;
+	std::vector<uint32_t> sphi;
+    LoadModelData("Resources\\Models\\sphere.obj", XMFLOAT3(1, 1, 1), XMFLOAT3(0, 0, 0), sphv, sphi);
+
+    m_spherePointCloud = std::vector<Vector3>(sphv.size());
+    std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
     
     Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
     m_meshVec.push_back(objectModel);
@@ -1384,35 +1468,6 @@ void Surtr::OnDeviceLost()
     CreateCommandListDependentResources();
 }
 
-void loop(std::vector<VMACH::PolygonFace>& faceVec, VMACH::PolygonFace res, const std::vector<DT3D::Edge>& voronoiEdgeVec, const Vector3& findPoint)
-{
-    int counter = 0;
-	for (int i = 0; i < voronoiEdgeVec.size(); i++)
-	{
-		if (voronoiEdgeVec[i].p0 == findPoint || voronoiEdgeVec[i].p1 == findPoint)
-		{
-            Vector3 nextPoint = voronoiEdgeVec[i].p0 == findPoint ? voronoiEdgeVec[i].p1 : voronoiEdgeVec[i].p0;
-            if (res.VertexVec.size() >= 3 && std::abs(res.CalcDistanceToPoint(nextPoint)) > 0.0001)
-                continue;
-
-            if (res.VertexVec.size() >= 3 && nextPoint == res.VertexVec[0])
-            {
-                faceVec.push_back(res);
-                continue;
-            }
-
-            bool dup = res.VertexVec.end() != std::find(res.VertexVec.begin(), res.VertexVec.end(), nextPoint);
-            if (FALSE == dup)
-            {
-				res.AddVertex(nextPoint);
-				loop(faceVec, res, voronoiEdgeVec, nextPoint);
-            }
-		}
-	}
-
-    OutputDebugStringWFormat(L"%d\n", counter);
-}
-
 void Surtr::DoFracture(
     _In_ const std::vector<VertexNormalColor>& visualMeshVertices, 
     _In_ const std::vector<uint32_t>& visualMeshIndices, 
@@ -1422,113 +1477,174 @@ void Surtr::DoFracture(
     achVertexData = std::vector<VertexNormalColor>();
     achIndexData = std::vector<uint32_t>();
 
-    // Test 3D Voronoi Generation.
-    const auto voronoiGen = [&]() 
+    const auto getBB = []()
     {
-        std::vector<Vector3> points;
-        int pCount = 0;
-        while (pCount < 50)
-        {
-            float x = rnd() * 5;
-            float y = rnd() * 5;
-            float z = rnd() * 5;
+		std::vector<Vector3> cube_points =
+		{ Vector3(-0.5,-0.5,-0.5),  Vector3(+0.5,-0.5,-0.5),  Vector3(+0.5,+0.5,-0.5),  Vector3(-0.5,+0.5,-0.5),
+		  Vector3(-0.5,-0.5,+0.5),  Vector3(+0.5,-0.5,+0.5),  Vector3(+0.5,+0.5,+0.5),  Vector3(-0.5,+0.5,+0.5) };
+		const std::vector<std::vector<int>> cube_neighbors = { {1, 4, 3},
+															  {5, 0, 2},
+															  {3, 6, 1},
+															  {7, 2, 0},
+															  {5, 7, 0},
+															  {1, 6, 4},
+															  {5, 2, 7},
+															  {4, 6, 3} };
 
-            Vector3 p(x, y, z);
+		std::vector<Poly::Vertex> poly;
+        Poly::InitPolyhedron(poly, cube_points, cube_neighbors);
 
-            if (points.end() == std::find_if(points.begin(), points.end(), [&](const Vector3& pp) { return (p - pp).Length() < 1; }))
+        return poly;
+    };
+
+    const auto translate = [](Polyhedron& poly, const Vector3& v)
+    {
+        for (int i = 0; i < poly.size(); i++)
+            poly[i].Position += v;
+    };
+
+	const auto scale = [](Polyhedron& poly, const Vector3& v)
+	{
+        for (int i = 0; i < poly.size(); i++)
+            poly[i].Position *= v;
+	};
+
+    const auto planeToPlane3d = [](const Plane& p)
+    {
+		double d = -p.D();
+		Vector3 n = -p.Normal();
+		n.Normalize();
+
+        return Poly::Plane(d, n);
+    };
+
+    const auto faceToPlane = [](const VMACH::PolygonFace& f)
+    {
+        Plane p = f.FacePlane;
+
+        double d = -p.D();
+        Vector3 n = -p.Normal();
+        n.Normalize();
+
+        return Poly::Plane(d, n);
+    };
+
+    const auto renderPolyhedron = [&achVertexData, &achIndexData](const Polyhedron& poly, bool isConvex = true)
+    {
+		double a, b, c;
+		a = rnd(); b = rnd(); c = rnd();
+		XMFLOAT3 color(a, b, c);
+
+		const auto faceVec = Poly::ExtractFaces(poly);
+		for (int i = 0; i < faceVec.size(); i++)
+		{
+			VMACH::PolygonFace f = { isConvex };
+			for (int j = 0; j < faceVec[i].size(); j++)
+                f.AddVertex(poly[faceVec[i][j]].Position);
+
+            if (FALSE == isConvex)
             {
-                points.emplace_back(x, y, z);
-                pCount++;
-            }
-        }
+                const Vector3 a = poly[faceVec[i][0]].Position;
+                const Vector3 b = poly[faceVec[i][1]].Position;
+                const Vector3 c = poly[faceVec[i][2]].Position;
 
-        const auto dt = DT3D::Triangulate(points);
-        // Render triangulate.
-        /*for (int i = 0; i < dt.faces.size(); i++)
-        {
-            achVertexData.push_back(VertexNormalColor(dt.faces[i].p0));
-            achVertexData.push_back(VertexNormalColor(dt.faces[i].p1));
-            achVertexData.push_back(VertexNormalColor(dt.faces[i].p2));
+                Vector3 normal = (b - a).Cross(c - a);
+                
+                if (TRUE == f.IsCCW(normal))
+                    normal = -normal;
 
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-        }*/
-
-        const std::vector<DT3D::Edge> voronoiEdgeVec = DT3D::Voronoi(dt);
-
-        std::vector<VMACH::PolygonFace> voronoiFaceVec;
-        std::vector<VMACH::PolygonFace> uniqueVoronoiFaceVec;
-        {
-            for (int i = 0; i < voronoiEdgeVec.size(); i++)
-            {
-                const Vector3 startPoint = voronoiEdgeVec[i].p0;
-
-                std::vector<VMACH::PolygonFace> faceVec;
-                VMACH::PolygonFace res = { true };
-                res.AddVertex(startPoint);
-                loop(faceVec, res, voronoiEdgeVec, startPoint);
-
-                voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
+                f.ManuallySetFacePlane(Plane(a, normal));
             }
 
-            for (int i = 0; i < voronoiEdgeVec.size(); i++)
-            {
-                const Vector3 startPoint = voronoiEdgeVec[i].p1;
+			f.Render(achVertexData, achIndexData, color);
+		}
+    };
 
-                std::vector<VMACH::PolygonFace> faceVec;
-                VMACH::PolygonFace res = { true };
-                res.AddVertex(startPoint);
-                loop(faceVec, res, voronoiEdgeVec, startPoint);
+	const auto renderPolyhedronWithColor = [&achVertexData, &achIndexData](const Polyhedron& poly, bool isConvex, Vector3 color)
+	{
+		const auto faceVec = Poly::ExtractFaces(poly);
+		for (int i = 0; i < faceVec.size(); i++)
+		{
+			VMACH::PolygonFace f = { isConvex };
+			for (int j = 0; j < faceVec[i].size(); j++)
+				f.AddVertex(poly[faceVec[i][j]].Position);
 
-                voronoiFaceVec.insert(voronoiFaceVec.end(), faceVec.begin(), faceVec.end());
-            }
-        }
+			if (FALSE == isConvex)
+			{
+				const Vector3 a = poly[faceVec[i][0]].Position;
+				const Vector3 b = poly[faceVec[i][1]].Position;
+				const Vector3 c = poly[faceVec[i][2]].Position;
 
-        UniqueVector<VMACH::PolygonFace>(voronoiFaceVec, uniqueVoronoiFaceVec);
+				Vector3 normal = (b - a).Cross(c - a);
 
-        // Render voronoi faces.
-        for (int i = 0; i < uniqueVoronoiFaceVec.size(); i++)
-        {
-            double a, b, c;
-            a = rnd(); b = rnd(); c = rnd();
-            XMFLOAT3 color(a, b, c);
+				if (TRUE == f.IsCCW(normal))
+					normal = -normal;
 
-            uniqueVoronoiFaceVec[i].__Reorder();
-            uniqueVoronoiFaceVec[i].Render(achVertexData, achIndexData, color);
-        }
+				f.ManuallySetFacePlane(Plane(a, normal));
+			}
 
-        // Render circumsphere center.
-        for (int i = 0; i < dt.TetVec.size(); i++)
-        {
-            Vector3 v0(dt.TetVec[i].sphere.center);
-            Vector3 v1 = v0 + Vector3(0.01f, 0, 0);
-            Vector3 v2 = v1 + Vector3(0, 0, 0.01f);
+			f.Render(achVertexData, achIndexData, color);
+		}
+	};
 
-            achVertexData.push_back(VertexNormalColor(v0));
-            achVertexData.push_back(VertexNormalColor(v1));
-            achVertexData.push_back(VertexNormalColor(v2));
+    const auto clipping = [&](const Polyhedron& polyhedron, const VMACH::Polygon3D& poly3d)
+    {
+        std::vector<Poly::Plane> planes;
+		for (int i = 0; i < poly3d.FaceVec.size(); i++)
+            planes.push_back(faceToPlane(poly3d.FaceVec[i]));
 
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-        }
+        Polyhedron res = polyhedron;
+        Poly::ClipPolyhedron(res, planes);
 
-        // Render voronoi edges.
-        /*for (int i = 0; i < voronoiEdgeVec.size(); i++)
-        {
-            Vector3 v0(voronoiEdgeVec[i].p0);
-            Vector3 v1(voronoiEdgeVec[i].p1);
-            Vector3 v2(voronoiEdgeVec[i].p1.x + 0.001f, voronoiEdgeVec[i].p1.y, voronoiEdgeVec[i].p1.z);
+        return res;
+    };
 
-            achVertexData.push_back(VertexNormalColor(v0));
-            achVertexData.push_back(VertexNormalColor(v1));
-            achVertexData.push_back(VertexNormalColor(v2));
+	const auto clipping2 = [&](const Polyhedron& polyhedron, const VMACH::Kdop& kdop)
+	{
+		std::vector<Poly::Plane> planes;
+		for (int x = 0; x < kdop.elementVec.size(); x++)
+		{
+			planes.push_back(planeToPlane3d(kdop.elementVec[x].MinPlane));
+			planes.push_back(planeToPlane3d(kdop.elementVec[x].MaxPlane));
+		}
 
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-            achIndexData.push_back(achIndexData.size());
-        }*/
+        Polyhedron res = polyhedron;
+		Poly::ClipPolyhedron(res, planes);
+
+        return res;
+	};
+
+    const auto checkMeshIsland = [](const Polyhedron& polyhedron)
+    {
+		// Check mesh islands.
+		std::vector<std::set<int>> groupVec;
+		std::set<int> exclude;
+
+		int iArbitPoint = 0;
+		while (TRUE)
+		{
+			std::set<int> group;
+            meshIslandLoop(iArbitPoint, polyhedron, group);
+
+			groupVec.push_back(group);
+			exclude.insert(group.begin(), group.end());
+
+			bool remain = false;
+			for (int v = 0; v < polyhedron.size(); v++)
+			{
+				if (FALSE == exclude.contains(v))
+				{
+					remain = true;
+					iArbitPoint = v;
+					break;
+				}
+			}
+
+			if (FALSE == remain)
+				break;
+		}
+
+        return groupVec;
     };
 
     const auto renderPolygon = [&achVertexData, &achIndexData] (VMACH::Polygon3D polygon, const Vector3& center, const int scalar)
@@ -1549,33 +1665,47 @@ void Surtr::DoFracture(
     };
 
     // 1. Create intermediate convex hull with limit count.
-    std::vector<VMACH::ConvexHullVertex> vertices(visualMeshVertices.size());
+    std::vector<Vector3> vertices(visualMeshVertices.size());
     std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.Position; });
 
-    VMACH::ConvexHull ich(vertices, m_decompositionArgument.ICHIncludePointLimit);
-    const std::list<VMACH::ConvexHullFace> ichFaceList = ich.GetFaces();
-    // ich.Render(achVertexData, achIndexData);
+    /*{
+		VMACH::ConvexHull ich(vertices, m_decompositionArgument.ICHIncludePointLimit);
+
+		std::vector<Vector3> ichFaceNormalVec;
+		for (const VMACH::ConvexHullFace& f : ich.GetFaces())
+		{
+			double a, b, c;
+			a = rnd(); b = rnd(); c = rnd();
+			XMFLOAT3 color(a, b, c);
+
+            Vector3 normal = (f.Vertices[1] - f.Vertices[0]).Cross(f.Vertices[2] - f.Vertices[0]);
+            normal.Normalize();
+
+			achVertexData.push_back(VertexNormalColor(f.Vertices[0], normal, color));
+			achVertexData.push_back(VertexNormalColor(f.Vertices[1], normal, color));
+			achVertexData.push_back(VertexNormalColor(f.Vertices[2], normal, color));
+
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+			achIndexData.push_back(achIndexData.size());
+		}
+
+		return;
+    }*/
 
     // 2. Collect ICH face normals.
-    std::vector<Vector3> ichFaceNormalVec;
-    for (const VMACH::ConvexHullFace& f : ichFaceList)
-    {
-        Vector3 normal = (f.Vertices[1] - f.Vertices[0]).Cross(f.Vertices[2] - f.Vertices[0]);
-        normal.Normalize();
-        ichFaceNormalVec.push_back(normal);
-    }
-
+    std::vector<Vector3> ichFaceNormalVec = GenerateICHNormal(vertices, m_decompositionArgument.ICHIncludePointLimit);
     m_decompositionResult.ICHFaceCnt = ichFaceNormalVec.size();
 
     // 3. Calculate bounding box.
     double minX, maxX, minY, maxY, minZ, maxZ;
     {
 		const auto x = std::minmax_element(vertices.begin(), vertices.end(),
-			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.x < p2.x; });
+                                           [](const Vector3 &p1, const Vector3 &p2) { return p1.x < p2.x; });
 		const auto y = std::minmax_element(vertices.begin(), vertices.end(),
-			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.y < p2.y; });
+                                           [](const Vector3 &p1, const Vector3 &p2) { return p1.y < p2.y; });
 		const auto z = std::minmax_element(vertices.begin(), vertices.end(),
-			[](const VMACH::ConvexHullVertex& p1, const VMACH::ConvexHullVertex& p2) { return p1.z < p2.z; });
+                                           [](const Vector3 &p1, const Vector3 &p2) { return p1.z < p2.z; });
 
 		minX = (*x.first).x;    maxX = (*x.second).x;
         minY = (*y.first).y;    maxY = (*y.second).y;
@@ -1590,41 +1720,22 @@ void Surtr::DoFracture(
     achKdop.Calc(vertices, maxAxisScale, m_decompositionArgument.ACHPlaneGapInverse);
 
     // 5. Init bounding box polygon.
-    VMACH::Polygon3D bbPolygon = VMACH::GetBoxPolygon();
-    bbPolygon.Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
-    bbPolygon.Scale(2.0);
-    bbPolygon.Translate(bbCenter);
+    Polyhedron achPolyhedron = getBB();
+    scale(achPolyhedron, Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
+    scale(achPolyhedron, Vector3(2.0, 2.0, 2.0));
+    translate(achPolyhedron, bbCenter);
 
-    // 7. Clip ACH polygon with clipping faces.
-    VMACH::Polygon3D achPoly = achKdop.ClipWithPolygon(bbPolygon);
-    // achPoly.Render(achVertexData, achIndexData);
+    // 6. Clip ACH polygon with clipping faces.
+    achPolyhedron = clipping2(achPolyhedron, achKdop);
 
-	// #TEST Check ACH contains all points or not.
-    m_decompositionResult.ACHErrorPointCnt = 0;
-	for (int i = 0; i < visualMeshVertices.size(); i++)
+    // 7. Init Mesh Polygon.
+	Polyhedron meshPolyhedron;
 	{
-		Vector3 vertPos = visualMeshVertices[i].Position;
+		std::vector<int> indices(visualMeshIndices.size());
+		std::transform(visualMeshIndices.begin(), visualMeshIndices.end(), indices.begin(), [](const uint32_t i) { return (int)i; });
 
-        bool isContain = achPoly.Contains(vertPos);
-        if (FALSE == isContain)
-            m_decompositionResult.ACHErrorPointCnt++;
-
-		/*VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
-		boxPoly.Scale(0.01);
-		boxPoly.Translate(vertPos);
-		boxPoly.Render(achVertexData, achIndexData, isContain ? Vector3(0, 1, 0) : Vector3(1, 0, 0));*/
-	}
-
-	// 8. Generate mesh polygon. That can be non-convex.
-    VMACH::Polygon3D meshPolygon = { false };
-	for (uint32_t i = 0; i < visualMeshIndices.size(); i += 3)
-	{
-        VMACH::PolygonFace face = { true };
-		face.AddVertex(visualMeshVertices[visualMeshIndices[i]].Position);
-		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 1]].Position);
-		face.AddVertex(visualMeshVertices[visualMeshIndices[i + 2]].Position);
-
-		meshPolygon.AddFace(face);
+		std::vector<std::vector<int>> nei = Poly::ExtractNeighborFromMesh(vertices, indices);
+		Poly::InitPolyhedron(meshPolyhedron, vertices, nei);
 	}
 
     // 9. Voronoi diagram generation for initial decomposition.
@@ -1635,75 +1746,455 @@ void Surtr::DoFracture(
         voroPolyVec[i].Translate(bbCenter);
     }
 
-    // 10. Generate initial compund.    
-    std::vector<VMACH::Compound> initialCompundVec;
-    for (int i = 0; i < voroPolyVec.size(); i++)
-    {
-        VMACH::Compound comp;
-        
-        comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(achPoly, voroPolyVec[i]);
-        if (comp.convexCell.FaceVec.size() == 0)
-            continue;
-        comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(meshPolygon, voroPolyVec[i]);
-
-        // Re-fitting.
-		VMACH::Kdop kdop(ichFaceNormalVec);
-		kdop.Calc(comp.visualMesh);
-		comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);
-
-        // renderPolygon(comp.convexCell, bbCenter, 0);
-		
-        initialCompundVec.push_back(comp);
-    }
-
 	// 11. Generate Fracture Pattern.
 	std::vector<VMACH::Polygon3D> fractureVoroPolyVec = GenerateFracturePattern(64, 0.01);
 	for (int i = 0; i < fractureVoroPolyVec.size(); i++)
-        fractureVoroPolyVec[i].Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)) * 2);
+		fractureVoroPolyVec[i].Scale(Vector3(maxAxisScale, maxAxisScale, maxAxisScale) * 2);
 
-    // Alignment.
-    const Vector3 impactPoint = Vector3(0, 6, 4);
+	// Alignment.
+    for (int i = 0; i < fractureVoroPolyVec.size(); i++)
+        fractureVoroPolyVec[i].Translate(m_decompositionArgument.ImpactPosition);
+
+    for (auto& v : m_spherePointCloud)
     {
-		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
-		boxPoly.Scale(0.5);
-		boxPoly.Translate(impactPoint);
-		boxPoly.Render(achVertexData, achIndexData, Vector3(1, 0, 0));
+        v *= m_decompositionArgument.ImpactRadius;
+        v += m_decompositionArgument.ImpactPosition;
     }
 
-	for (int i = 0; i < fractureVoroPolyVec.size(); i++)
-        fractureVoroPolyVec[i].Translate(impactPoint);
+	{
+		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
+		boxPoly.Scale(0.05);
+		boxPoly.Translate(m_decompositionArgument.ImpactPosition);
+		boxPoly.Render(achVertexData, achIndexData, Vector3(1, 0, 0));
+	}
+
+	struct Piece
+	{
+		Polyhedron Convex;
+		Polyhedron Mesh;
+	};
+
+    struct DecomposeResult
+    {
+        std::vector<Piece> PieceVec;
+        std::vector<std::vector<std::vector<int>>> PieceExtractedConvex;
+        std::vector<std::vector<int>> CompoundBind;
+    };
+
+    const auto polyOutsideSphere = [&](const Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract, const Vector3& origin, const float radius)
+    {
+        /*for (const auto& f : extract)
+        {
+            Plane p(polyhedron[f[0]].Position, polyhedron[f[1]].Position, polyhedron[f[2]].Position);
+            
+            Vector3 normal = p.Normal();
+            normal.Normalize();
+
+            double d = VMACH::CalcDistanceToPoint(origin, p);
+            if (std::abs(d) < radius)
+            {
+                Vector3 projOrigin;
+                if (d < 0)
+                {
+                    projOrigin = origin + normal * std::abs(d);
+                }
+                else
+                {
+                    projOrigin = origin - normal * std::abs(d);
+                }
+
+                float projRadius = std::sqrt(radius * radius - d * d);
+
+                bool intersect = false;
+                for (int v = 0; v < f.size(); v++)
+                {
+                    const Vector3& a = polyhedron[f[v]].Position;
+                    const Vector3& b = polyhedron[f[(v + 1) % f.size()]].Position;
+
+                    const float ed = std::sqrt((projOrigin - a).LengthSquared() - std::pow((projOrigin - a).Dot(b - a), 2));
+                    if (ed <= projRadius)
+                    {
+                        intersect = true;
+                        break;
+                    }
+                }
+
+                if (TRUE == intersect)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;*/
+
+		bool completlyOutside = true;
+		for (const auto& v : polyhedron)
+		{
+			if ((origin - v.Position).Length() < radius)
+			{
+				completlyOutside = false;
+				break;
+			}
+		}
+
+        if (FALSE == completlyOutside)
+            return false;
+
+		for (const auto& po : m_spherePointCloud)
+		{
+			bool contain = true;
+			for (const auto& f : extract)
+			{
+				Plane p(polyhedron[f[0]].Position, polyhedron[f[1]].Position, polyhedron[f[2]].Position);
+				if (VMACH::CalcDistanceToPoint(po, p) > 0)
+				{
+					contain = false;
+					break;
+				}
+			}
+
+			if (TRUE == contain)
+				return false;
+		}
+
+		return true;
+    };
+
+    const auto decomposition = [&](const DecomposeResult& preDecompose, const std::vector<VMACH::Polygon3D>& voroPolyVec, bool partial = false)
+    {
+        std::vector<Piece> decompose;
+        std::vector<std::vector<int>> bind;
+
+        const std::vector<Piece>& targetPieceVec = preDecompose.PieceVec;
+        const std::vector<std::vector<std::vector<int>>>& extract = preDecompose.PieceExtractedConvex;
+
+        // Check convex located at outside or not.
+        std::set<int> outside;
+        std::vector<int> outsideBind;
+		if (TRUE == partial)
+		{
+			for (int c = 0; c < targetPieceVec.size(); c++)
+			{
+				if (TRUE == polyOutsideSphere(targetPieceVec[c].Convex, extract[c], m_decompositionArgument.ImpactPosition, m_decompositionArgument.ImpactRadius))
+				{
+					outside.insert(c);
+
+					outsideBind.push_back(decompose.size());
+					decompose.push_back(targetPieceVec[c]);
+				}
+			}
+		}
+        
+        // 0-th element is reserved.
+        bind.push_back(outsideBind);
+		
+        for (const auto& voroPoly : voroPolyVec)
+		{
+            std::vector<int> localBind;
+            for (int c = 0; c < targetPieceVec.size(); c++)
+            {
+                if (TRUE == outside.contains(c))
+                    continue;
+
+				Polyhedron convex = clipping(targetPieceVec[c].Convex, voroPoly);
+				if (convex.empty())
+					continue;
+
+				Poly::Polyhedron mesh = clipping(targetPieceVec[c].Mesh, voroPoly);
+				if (mesh.empty())
+					continue;
+
+				const auto groupVec = checkMeshIsland(mesh);
+				if (groupVec.size() >= 2)
+				{
+					for (const auto& group : groupVec)
+					{
+						Polyhedron island;
+						std::unordered_map<int, int> mapping;
+
+						for (const int iVert : group)
+						{
+							int oldIndex = island.size();
+							mapping[iVert] = oldIndex;
+
+							island.push_back(mesh[iVert]);
+						}
+
+						for (auto& vert : island)
+							for (int& iAdj : vert.NeighborVertexVec)
+								iAdj = mapping[iAdj];
+
+                        localBind.push_back(decompose.size());
+                        decompose.push_back({ convex, island });
+					}
+				}
+				else
+				{
+                    localBind.push_back(decompose.size());
+                    decompose.push_back({ convex, mesh });
+				}
+            }
+
+            if (FALSE == localBind.empty())
+                bind.push_back(localBind);
+		}
+
+        std::vector<std::vector<std::vector<int>>> extracted(decompose.size());
+        std::transform(decompose.begin(), decompose.end(), extracted.begin(), [](const Piece& p) { return Poly::ExtractFaces(p.Convex); });
+
+        return DecomposeResult(decompose, extracted, bind);
+    };
+
+    const auto afterCheckOutside = [&](DecomposeResult& decompose)
+    {
+        std::set<int> surplus;
+
+        // Ignore 0-th element.
+        for (int i = 1; i < decompose.CompoundBind.size(); i++)
+        {
+            auto& local = decompose.CompoundBind[i];
+
+			std::set<int> outside;
+			for (const int c : local)
+			{
+				if (TRUE == polyOutsideSphere(decompose.PieceVec[c].Convex, decompose.PieceExtractedConvex[c], m_decompositionArgument.ImpactPosition, m_decompositionArgument.ImpactRadius))
+					outside.insert(c);
+			}
+
+            if (FALSE == outside.empty())
+            {
+                local.erase(std::remove_if(local.begin(), local.end(), [&outside](const int c) { return outside.contains(c); }), local.end());
+                if (TRUE == local.empty())
+                    surplus.insert(i);
+
+                decompose.CompoundBind[0].insert(decompose.CompoundBind[0].end(), outside.begin(), outside.end());
+            }
+        }
+
+        // Clean size 0.
+        decompose.CompoundBind.erase(
+            std::remove_if(std::next(decompose.CompoundBind.begin()), decompose.CompoundBind.end(), [](const auto& local) { return local.empty(); }), decompose.CompoundBind.end());
+    };
+
+	const std::vector<Vector3> aa =
+	{
+		Vector3(1, 0, 0),
+		Vector3(0, 1, 0),
+		Vector3(0, 0, 1),
+		Vector3(1, 1, 0),
+		Vector3(0, 1, 1),
+		Vector3(1, 0, 1),
+		Vector3(1, 1, 1),
+	};
+
+    const auto reFitting = [&](std::vector<Piece>& targetPieceVec)
+    {
+		for (Piece& c : targetPieceVec)
+		{
+			VMACH::Kdop kdop(GenerateICHNormal(c.Mesh, std::min((int)c.Mesh.size(), 6)));
+			kdop.Calc(c.Mesh);
+
+			c.Convex = clipping2(c.Convex, kdop);
+		}
+    };
+
+    struct FaceNode
+    {
+        int CID;
+        double AbsD;
+        Plane FacePlane;
+        std::vector<Vector3> FacePoints;
+    };
+
+    const auto handleConvexIsland = [&renderPolyhedronWithColor](DecomposeResult& decomposeResult)
+    {
+        std::vector<std::vector<int>> newBind;
+
+        for (auto& localBind : decomposeResult.CompoundBind)
+        {
+            if (localBind.size() <= 1)
+                continue;
+
+            std::vector<FaceNode> nodes;
+            for (const int cid : localBind)
+            {
+                for (const auto& poly : decomposeResult.PieceExtractedConvex[cid])
+                {
+                    std::vector<Vector3> points(poly.size());
+                    std::transform(poly.begin(), poly.end(), points.begin(), [&](const int v) { return decomposeResult.PieceVec[cid].Convex[v].Position; });
+
+                    Plane p(points[0], points[1], points[2]);
+                    nodes.push_back(FaceNode(cid, std::abs(p.D()), p, points));
+                }
+            }
+
+            std::sort(nodes.begin(), nodes.end(), [](const FaceNode& a, const FaceNode& b) { return a.AbsD < b.AbsD; });
+
+            std::unordered_map<int, std::set<int>> nei;
+            for (const int cid : localBind)
+                nei[cid] = std::set<int>();
+
+            for (int i = 0; i < nodes.size() - 1; i++)
+            {
+                for (int j = i + 1; j < nodes.size(); j++)
+                {
+                    if (std::abs(nodes[i].AbsD - nodes[j].AbsD) < 1e-3)
+                    {
+                        Vector3 in = nodes[i].FacePlane.Normal();
+                        Vector3 jn = nodes[j].FacePlane.Normal();
+                        in.Normalize(); jn.Normalize();
+
+                        // Do additional jobs...
+                        /*std::vector<Vector3> iProjVec;
+                        for (const Vector3& point : nodes[i].FacePoints)
+                        {
+                            iProjVec.push_back(point - (point -)
+                        }
+
+                        float cos = in.z;
+                        float ab = std::sqrt(in.x * in.x + in.y * in.y);
+                        float sin = ab;
+                        float u1 = in.y / ab;
+                        float u2 = -in.x / ab;
+
+                        Vector4 a(cos + u1 * u1 * (1 - cos), u1 * u2 * (1 - cos), u2 * sin, 0);
+                        Vector4 b(u1* u2* (1 - cos), cos + u2 * u2 * (1 - cos), -u1 * sin, 0);
+                        Vector4 c(-u2 * sin, u1* sin, cos, 0);
+                        Vector4 d(0, 0, 0, 1);
+
+                        SimpleMath::Matrix rot(a, b, c, d);*/
+
+                        bool onOpposite = std::abs(1 + in.Dot(jn)) < 1e-4;
+                        /*bool onOpposite = in.Dot(jn) < 0;*/
+                        if (TRUE == onOpposite)
+                        {
+                            nei[nodes[i].CID].insert(nodes[j].CID);
+                            nei[nodes[j].CID].insert(nodes[i].CID);
+                        }
+                    }
+                }
+            }
+
+            // Flood fill.
+            std::set<int> remain;
+            remain.insert(localBind.begin(), localBind.end());
+
+            std::vector<std::vector<int>> splitGroup;
+
+            while (remain.size() != 0)
+            {
+                std::vector<int> split;
+
+                std::queue<int> fillQueue;
+                fillQueue.push(*remain.begin());
+
+                while (FALSE == fillQueue.empty())
+                {
+                    int curr = fillQueue.front();
+                    fillQueue.pop();
+
+                    if (TRUE == remain.contains(curr))
+                    {
+                        split.push_back(curr);
+                        remain.erase(curr);
+
+                        for (const int iAdj : nei[curr])
+                            fillQueue.push(iAdj);
+                    }
+                }
+
+                splitGroup.push_back(split);
+            }
+
+            if (splitGroup.size() >= 2)
+            {
+                // Check neighboring OK or not...
+                /*OutputDebugStringWFormat(L"%d\n", splitGroup.size());
+
+                for (const auto& split : splitGroup)
+                {
+                    double a, b, c;
+                    a = rnd(); b = rnd(); c = rnd();
+                    XMFLOAT3 color(a, b, c);
+
+                    for (const int i : split)
+                        renderPolyhedronWithColor(decomposeResult.CompoundVec[i].Convex, true, color);
+                }*/
+
+                localBind = splitGroup[0];
+                newBind.insert(newBind.end(), std::next(splitGroup.begin()), splitGroup.end());
+            }
+        }
+
+        decomposeResult.CompoundBind.insert(decomposeResult.CompoundBind.end(), newBind.begin(), newBind.end());
+    };
+
+    // 10. Generate initial pieces.
+    DecomposeResult initial = decomposition(DecomposeResult({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) }, { { 0 } }), voroPolyVec);
+    reFitting(initial.PieceVec);
+
+	// For Collision-Ray.
+    for (int p = 0; p < initial.PieceVec.size(); p++)
+    {
+        const auto& faceVec = initial.PieceExtractedConvex[p];
+
+		VMACH::Polygon3D polygon3D = { true };
+		for (int i = 0; i < faceVec.size(); i++)
+		{
+			VMACH::PolygonFace f = { true };
+			for (int j = 0; j < faceVec[i].size(); j++)
+				f.AddVertex(initial.PieceVec[p].Convex[faceVec[i][j]].Position);
+
+			polygon3D.AddFace(f);
+		}
+
+		m_convexVec.push_back(polygon3D);
+    }
 
     // 12. Apply fracture pattern.
-	std::vector<std::vector<VMACH::Compound>> secondCompoundVec(initialCompundVec.size());
-	for (int j = 0; j < fractureVoroPolyVec.size(); j++)
-	{
-		for (int i = 0; i < initialCompundVec.size(); i++)
-		{
-			VMACH::Compound comp;
-			comp.convexCell = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].convexCell, fractureVoroPolyVec[j]);
-			if (comp.convexCell.FaceVec.size() == 0)
-				continue;
+    TIMER_INIT;
+    TIMER_START;
+    
+    constexpr bool partialFracture = true;
 
-			// #INEFFICIENT!
-			comp.visualMesh = VMACH::Polygon3D::ClipWithPolygon(initialCompundVec[i].visualMesh, fractureVoroPolyVec[j]);
+    DecomposeResult second = decomposition(initial, fractureVoroPolyVec, partialFracture);
+    if (TRUE == partialFracture)
+        afterCheckOutside(second);
+    handleConvexIsland(second);
 
-			// Re-fitting.
-			/*VMACH::Kdop kdop(ichFaceNormalVec);
-			kdop.Calc(comp.visualMesh);
-			comp.convexCell = kdop.ClipWithPolygon(comp.convexCell);*/
+    reFitting(second.PieceVec);
 
-			secondCompoundVec[i].push_back(comp);
-		}
-	}
+    TIMER_STOP_PRINT;
 
-	for (int i = 0; i < secondCompoundVec.size(); i++)
-	{
-		for (int j = 0; j < secondCompoundVec[i].size(); j++)
-		{
-            renderPolygon(secondCompoundVec[i][j].convexCell, bbCenter, 0);
-			// renderPolygon(secondCompoundVec[i][j].visualMesh, bbCenter, 0);
-		}
-	}
+    // Render Loop
+    for (int l = 0; l < second.CompoundBind.size(); l++)
+    {
+		double a, b, c;
+		a = rnd(); b = rnd(); c = rnd();
+		XMFLOAT3 color(a, b, c);
+
+        if (l == 0)
+            color = XMFLOAT3(1, 0.5f, 0);
+
+        Vector3 centroid;
+        for (const int i : second.CompoundBind[l])
+        {
+			for (const Poly::Vertex& v : second.PieceVec[i].Convex)
+				centroid += v.Position;
+            centroid /= second.PieceVec[i].Convex.size();
+        }
+
+        for (const int i : second.CompoundBind[l])
+        {
+            //translate(second.PieceVec[i].Mesh, Vector3(0, 0, (centroid - bbCenter).z * 2));
+
+            //renderPolyhedronWithColor(second.PieceVec[i].Convex, true, color);
+            renderPolyhedronWithColor(second.PieceVec[i].Mesh, false, color);
+        }
+    }
+
+    VMACH::RenderEdge(achVertexData, achIndexData);
 }
 
 std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3> vertices, _In_ const int ichIncludePointLimit)
@@ -1726,6 +2217,17 @@ std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const VMACH::Polygon3D polygo
     std::vector<Vector3> vertices;
     for (int f = 0; f < polygon.FaceVec.size(); f++)
         vertices.insert(vertices.end(), polygon.FaceVec[f].VertexVec.begin(), polygon.FaceVec[f].VertexVec.end());
+
+    return GenerateICHNormal(vertices, ichIncludePointLimit);
+}
+
+std::vector<DirectX::SimpleMath::Vector3> Surtr::GenerateICHNormal(
+    _In_ const Poly::Polyhedron polyhedron,                                                          
+    _In_ const int ichIncludePointLimit)
+{
+    std::vector<Vector3> vertices(polyhedron.size());
+    std::transform(polyhedron.begin(), polyhedron.end(), vertices.begin(),
+                   [](const Poly::Vertex &vert) { return vert.Position; });
 
     return GenerateICHNormal(vertices, ichIncludePointLimit);
 }
@@ -1754,6 +2256,45 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cell
 	}
 
     return GenerateVoronoi(cellPointVec);
+}
+
+bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ const DirectX::SimpleMath::Ray ray, _Out_ float& dist)
+{
+    float minDist = std::numeric_limits<float>::max();
+    bool hit = false;
+
+    for (const auto & face : convex.FaceVec)
+    {
+		float d;
+		if (FALSE == ray.Intersects(face.FacePlane, d))
+            continue;
+
+        Vector3 intersectionPoint = ray.position + ray.direction * d;
+		int nVert = face.VertexVec.size();
+		const Vector3 faceNormal = face.GetNormal();
+
+        bool inside = true;
+		for (int v = 0; v < nVert; v++)
+		{
+			const Vector3& a = face.VertexVec[v];
+			const Vector3& b = face.VertexVec[(v + 1) % nVert];
+
+			if (FALSE == VMACH::OnYourRight(a, b, intersectionPoint, faceNormal))
+			{
+				inside = false;
+				break;
+			}
+		}
+
+		if (TRUE == inside && d < minDist)
+		{
+			minDist = d;
+            hit = true;
+		}
+    }
+
+    dist = minDist;
+    return hit;
 }
 
 std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount)
@@ -1811,6 +2352,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const std::vector<Dire
 
 		voroCell.neighbors(neighborVec);
 		voroCell.face_vertices(cellFaceVec);
+
 		voroCell.vertices(x, y, z, cellVertices);
 
 		VMACH::Polygon3D voroPoly = { true };
@@ -1992,7 +2534,8 @@ void Surtr::LoadModelData(
 	const aiScene* scene = importer.ReadFile(fileName,
 		aiProcess_CalcTangentSpace |
 		aiProcess_Triangulate |
-		aiProcess_FlipWindingOrder);
+		aiProcess_FlipWindingOrder | 
+        aiProcess_JoinIdenticalVertices);
 
 	if (scene == nullptr)
 		throw std::exception();

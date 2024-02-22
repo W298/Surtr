@@ -1,24 +1,21 @@
 #ifndef SURTUR_ARGUMENT_H
 #define SURTUR_ARGUMENT_H
 
-constexpr UINT MIN_SUB_DIVIDE_COUNT = 7u;
-constexpr UINT MAX_SUB_DIVIDE_COUNT = 9u;
-
 struct SurtrArgument
 {
-    UINT SubDivideCount;
+    UINT ModelIndex;
     UINT ShadowMapSize;
     BOOL FullScreenMode;
     UINT Width;
     UINT Height;
 
     explicit SurtrArgument(
-        UINT subDivideCount = 8u,
+        UINT modelIndex = 8u,
         UINT shadowMapSize = 8192u,
         BOOL fullScreenMode = FALSE,
         UINT width = GetSystemMetrics(SM_CXSCREEN),
         UINT height = GetSystemMetrics(SM_CYSCREEN))
-        : SubDivideCount(subDivideCount), ShadowMapSize(shadowMapSize), FullScreenMode(fullScreenMode), Width(width), Height(height) {}
+        : ModelIndex(modelIndex), ShadowMapSize(shadowMapSize), FullScreenMode(fullScreenMode), Width(width), Height(height) {}
 };
 
 SurtrArgument CollectSurtrArgument()
@@ -32,7 +29,7 @@ SurtrArgument CollectSurtrArgument()
 
     if (nArgs >= 2)
     {
-        arguments.SubDivideCount = std::min(MAX_SUB_DIVIDE_COUNT, std::max(MIN_SUB_DIVIDE_COUNT, static_cast<UINT>(std::stoi(szArgList[1]))));
+        arguments.ModelIndex = static_cast<UINT>(std::stoi(szArgList[1]));
     }
     if (nArgs >= 3)
     {

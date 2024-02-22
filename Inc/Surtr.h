@@ -1,7 +1,5 @@
 #pragma once
 
-#define RENDER_OBJECT 2
-
 #include "ShadowMap.h"
 #include "Mesh.h"
 #include "VMACH.h"
@@ -20,7 +18,7 @@ public:
     Surtr& operator= (Surtr const&) = delete;
 
     // Initialization
-    void InitializeD3DResources(HWND window, int width, int height, UINT subDivideCount, UINT shadowMapSize, BOOL fullScreenMode);
+    void InitializeD3DResources(HWND window, int width, int height, UINT modelIndex, UINT shadowMapSize, BOOL fullScreenMode);
 
     // Basic game loop
     void Tick();
@@ -30,6 +28,7 @@ public:
     void OnKeyUp(UINT8 key);
     void OnMouseWheel(float delta);
     void OnMouseMove(int x, int y);
+    void OnMouseDown();
 
     // Messages
     void OnActivated();
@@ -61,9 +60,11 @@ private:
 
 	struct DecompositionArgument
 	{
-		INT                 ICHIncludePointLimit = 100;
+		INT                 ICHIncludePointLimit = 20;
 		FLOAT               ACHPlaneGapInverse = 2000.0f;
-        INT                 Seed = 12345;
+        INT                 Seed = 66667;
+        DirectX::XMFLOAT3   ImpactPosition = DirectX::XMFLOAT3(0, 6, 4);
+        FLOAT               ImpactRadius = 1.0f;
 	};
 
 	struct DecompositionResult
@@ -102,9 +103,18 @@ private:
 		_In_ const VMACH::Polygon3D polygon,
 		_In_ const int ichIncludePointLimit);
 
+    std::vector<DirectX::SimpleMath::Vector3> GenerateICHNormal(
+        _In_ const Poly::Polyhedron polyhedron,
+        _In_ const int ichIncludePointLimit);
+
     std::vector<VMACH::Polygon3D> GenerateFracturePattern(
         _In_ const int cellCount,
         _In_ const double mean);
+
+    bool ConvexRayIntersection(
+        _In_ const VMACH::Polygon3D& convex,
+        _In_ const DirectX::SimpleMath::Ray ray,
+        _Out_ float& dist);
 
     void TestACHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
     void TestECHCreation(_In_ const std::vector<VertexNormalColor>& visualMeshVertices);
@@ -222,7 +232,11 @@ private:
     Microsoft::WRL::ComPtr<ID3D12Resource>              m_heightRTexResource;
 
     // Meshes
+    UINT                                                m_modelIndex;
     std::vector<Mesh*>                                  m_meshVec;
+    std::vector<VMACH::Polygon3D>                       m_convexVec;
+
+    std::vector<DirectX::SimpleMath::Vector3>           m_spherePointCloud;
 
     // Shadow
     std::unique_ptr<ShadowMap>  			            m_shadowMap;

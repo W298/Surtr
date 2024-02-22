@@ -48,8 +48,12 @@
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
+#include <set>
 #include <random>
 #include <numeric>
+#include <format>
+#include <queue>
 #include <windowsx.h>
 
 #ifdef _DEBUG
@@ -101,6 +105,16 @@ static void UniqueVector(const std::vector<T>& dupVec, std::vector<T>& uniqueVec
 {
 	std::copy_if(dupVec.begin(), dupVec.end(), std::back_inserter(uniqueVec),
 		[&](const T& e) { return uniqueVec.end() == std::find(uniqueVec.begin(), uniqueVec.end(), e); });
+}
+
+static size_t CombineHash(size_t lhs, size_t rhs)
+{
+	if constexpr (sizeof(size_t) >= 8)
+		lhs ^= rhs + 0x517cc1b727220a95 + (lhs << 6) + (lhs >> 2);
+	else
+        lhs ^= rhs + 0x9e3779b9 + (lhs << 6) + (lhs >> 2);
+	
+    return lhs;
 }
 
 #define OutputDebugStringWFormat(fmt, ...) _DebugOut(fmt, __VA_ARGS__);
