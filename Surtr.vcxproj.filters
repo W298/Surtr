@@ -93,6 +93,9 @@
     <ClInclude Include="Inc\Poly.h">
       <Filter>Inc</Filter>
     </ClInclude>
+    <ClInclude Include="Inc\Kdop.h">
+      <Filter>Inc</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
@@ -136,6 +139,9 @@
       <Filter>Src</Filter>
     </ClCompile>
     <ClCompile Include="Src\Poly.cpp">
+      <Filter>Src</Filter>
+    </ClCompile>
+    <ClCompile Include="Src\Kdop.cpp">
       <Filter>Src</Filter>
     </ClCompile>
   </ItemGroup>

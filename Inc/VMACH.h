@@ -2,7 +2,6 @@
 #define VMACH_H
 
 #include "Mesh.h"
-#include "Poly.h"
 
 namespace VMACH
 {
@@ -163,36 +162,6 @@ private:
 	std::list<ConvexHullFace>                    m_faceList = {};
 	std::list<ConvexHullEdge>                    m_edgeList = {};
 	std::unordered_map<size_t, ConvexHullEdge*> m_edgeMap = {};
-};
-
-struct KdopElement
-{
-	Vector3 Normal;
-	Vector3 MinVertex;
-	Vector3 MaxVertex;
-	double  MinDist = DBL_MAX;
-	double  MaxDist = -DBL_MAX;
-	Plane   MinPlane;
-	Plane   MaxPlane;
-
-	KdopElement(const Vector3& _normal) : Normal(_normal) {}
-};
-
-struct Kdop
-{
-	std::vector<KdopElement> elementVec;
-
-	Kdop(const std::vector<Vector3>& normalVec)
-	{
-		std::transform(normalVec.begin(), normalVec.end(), std::back_inserter(elementVec),
-					   [](const Vector3& normal) { return KdopElement(normal); });
-	}
-
-	void      Calc(const std::vector<Vector3>& vertices, const double& maxAxisScale, const float& planeGapInv);
-	void      Calc(const Polygon3D& mesh);
-	void      Calc(const Poly::Polyhedron& mesh);
-	Polygon3D ClipWithPolygon(const Polygon3D& polygon, int doTest = -1) const;
-	void      Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData);
 };
 
 struct Triangle

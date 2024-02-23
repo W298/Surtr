@@ -127,6 +127,10 @@ static size_t CombineHash(size_t lhs, size_t rhs)
 
 #define TIMER_START QueryPerformanceCounter(&st)
 
+#define TIMER_START_NAME(name) \
+OutputDebugStringW(name); \
+QueryPerformanceCounter(&st)
+
 #define TIMER_STOP \
     QueryPerformanceCounter(&en); \
     el=(float)(en.QuadPart-st.QuadPart)/freq.QuadPart

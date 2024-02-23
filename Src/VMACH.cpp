@@ -16,7 +16,7 @@ bool VMACH::PolygonFace::operator==(const PolygonFace& other)
 	for (int i = 0; i < VertexVec.size(); i++)
 	{
 		if (other.VertexVec.end() == std::find_if(other.VertexVec.begin(), other.VertexVec.end(),
-			[&](const Vector3& v) { return NearlyEqual(v, VertexVec[i]); }));
+												  [&](const Vector3& v) { return NearlyEqual(v, VertexVec[i]); }));
 		return false;
 	}
 
@@ -329,11 +329,12 @@ void VMACH::PolygonFace::__Reorder()
 
 	Vector3 n = GetNormal();
 
-	std::sort(VertexVec.begin() + 1, VertexVec.end(), [&](const Vector3& a, const Vector3& b)
- {
-	 return GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, a - centroid, n) >
-		 GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, b - centroid, n);
-	});
+	std::sort(VertexVec.begin() + 1, VertexVec.end(), 
+			  [&](const Vector3& a, const Vector3& b)
+			  {
+				  return GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, a - centroid, n) >
+					  GetAngleBetweenTwoVectorsOnPlane(VertexVec[0] - centroid, b - centroid, n);
+			  });
 }
 
 VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, const Plane& clippingPlane,
@@ -1294,7 +1295,7 @@ void VMACH::RenderEdge(std::vector<VertexNormalColor>& vertexData, std::vector<u
 		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[0], XMFLOAT3(), Vector3(1, 0, 0)));
 		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[1], XMFLOAT3(), Vector3(1, 0, 0)));
 		vertexData.push_back(VertexNormalColor(globalEdgeContainer[e].VertexVec[1] + Vector3(-0.01, 0.01, -0.01),
-			XMFLOAT3(), Vector3(1, 0, 0)));
+											   XMFLOAT3(), Vector3(1, 0, 0)));
 
 		indexData.push_back(indexData.size());
 		indexData.push_back(indexData.size());
@@ -1307,211 +1308,6 @@ void VMACH::RenderEdge(std::vector<VertexNormalColor>& vertexData, std::vector<u
 		boxPoly.Scale(0.001);
 		boxPoly.Translate(globalPointContainer[e]);
 		boxPoly.Render(vertexData, indexData, Vector3(0, 1, 0));
-	}
-}
-
-void VMACH::Kdop::Calc(const std::vector<Vector3>& vertices, const double& maxAxisScale, const float& planeGapInv)
-{
-	for (const Vector3& vert : vertices)
-	{
-		for (KdopElement& kdopElement : elementVec)
-		{
-			float t = vert.Dot(kdopElement.Normal);
-
-			if (kdopElement.MinDist > t)
-			{
-				kdopElement.MinDist = t;
-				kdopElement.MinPlane = Plane(vert, -kdopElement.Normal);
-				kdopElement.MinVertex = vert;
-			}
-
-			if (kdopElement.MaxDist < t)
-			{
-				kdopElement.MaxDist = t;
-				kdopElement.MaxPlane = Plane(vert, kdopElement.Normal);
-				kdopElement.MaxVertex = vert;
-			}
-		}
-	}
-
-	for (KdopElement& kdopElement : elementVec)
-	{
-		Vector3 minPlaneNormal = kdopElement.MinPlane.Normal();
-		Vector3 maxPlaneNormal = kdopElement.MaxPlane.Normal();
-		minPlaneNormal.Normalize();
-		maxPlaneNormal.Normalize();
-
-		kdopElement.MinPlane =
-			Plane(kdopElement.MinVertex + minPlaneNormal * (maxAxisScale / planeGapInv), minPlaneNormal);
-		kdopElement.MaxPlane =
-			Plane(kdopElement.MaxVertex + maxPlaneNormal * (maxAxisScale / planeGapInv), maxPlaneNormal);
-	}
-}
-
-void VMACH::Kdop::Calc(const Polygon3D& mesh)
-{
-	for (const VMACH::PolygonFace& face : mesh.FaceVec)
-	{
-		for (const Vector3& vert : face.VertexVec)
-		{
-			for (KdopElement& kdopElement : elementVec)
-			{
-				float t = vert.Dot(kdopElement.Normal);
-
-				if (kdopElement.MinDist > t)
-				{
-					kdopElement.MinDist = t;
-					kdopElement.MinPlane = Plane(vert, -kdopElement.Normal);
-					kdopElement.MinVertex = vert;
-				}
-
-				if (kdopElement.MaxDist < t)
-				{
-					kdopElement.MaxDist = t;
-					kdopElement.MaxPlane = Plane(vert, kdopElement.Normal);
-					kdopElement.MaxVertex = vert;
-				}
-			}
-		}
-	}
-
-	for (KdopElement& kdopElement : elementVec)
-	{
-		Vector3 minPlaneNormal = kdopElement.MinPlane.Normal();
-		Vector3 maxPlaneNormal = kdopElement.MaxPlane.Normal();
-		minPlaneNormal.Normalize();
-		maxPlaneNormal.Normalize();
-
-		kdopElement.MinPlane = Plane(kdopElement.MinVertex + minPlaneNormal * 0.001, minPlaneNormal);
-		kdopElement.MaxPlane = Plane(kdopElement.MaxVertex + maxPlaneNormal * 0.001, maxPlaneNormal);
-	}
-}
-
-void VMACH::Kdop::Calc(const Poly::Polyhedron& mesh)
-{
-	for (const Poly::Vertex& vert : mesh)
-	{
-		for (KdopElement& kdopElement : elementVec)
-		{
-			float t = vert.Position.Dot(kdopElement.Normal);
-
-			if (kdopElement.MinDist > t)
-			{
-				kdopElement.MinDist = t;
-				kdopElement.MinPlane = Plane(vert.Position, -kdopElement.Normal);
-				kdopElement.MinVertex = vert.Position;
-			}
-
-			if (kdopElement.MaxDist < t)
-			{
-				kdopElement.MaxDist = t;
-				kdopElement.MaxPlane = Plane(vert.Position, kdopElement.Normal);
-				kdopElement.MaxVertex = vert.Position;
-			}
-		}
-	}
-
-	for (KdopElement& kdopElement : elementVec)
-	{
-		Vector3 minPlaneNormal = kdopElement.MinPlane.Normal();
-		Vector3 maxPlaneNormal = kdopElement.MaxPlane.Normal();
-		minPlaneNormal.Normalize();
-		maxPlaneNormal.Normalize();
-
-		kdopElement.MinPlane = Plane(kdopElement.MinVertex + minPlaneNormal * 0.001, minPlaneNormal);
-		kdopElement.MaxPlane = Plane(kdopElement.MaxVertex + maxPlaneNormal * 0.001, maxPlaneNormal);
-	}
-}
-
-VMACH::Polygon3D VMACH::Kdop::ClipWithPolygon(const Polygon3D& polygon, int doTest) const
-{
-	Polygon3D outPolygon = polygon;
-
-	for (int i = 0; i < elementVec.size(); i++)
-	{
-		Vector3 n = elementVec[i].MinPlane.Normal();
-		n.Normalize();
-
-		bool exist = polygon.FaceVec.end() !=
-			std::find_if(polygon.FaceVec.begin(), polygon.FaceVec.end(), [&](const PolygonFace& f)
-{
-	Vector3 fn = f.GetNormal();
-	return (1 - fn.Dot(n)) < 1e-4 && std::abs(f.FacePlane.w - elementVec[i].MinPlane.w) < 1e-4;
-			});
-
-		if (TRUE == exist)
-			continue;
-
-		// #BREAK
-		/*if (doTest == 1 && i > 5)
-			continue;*/
-
-		outPolygon =
-			VMACH::Polygon3D::ClipWithPlane(outPolygon, elementVec[i].MinPlane, (doTest == 1 && i == 5) ? 1 : -1);
-	}
-
-	for (int i = 0; i < elementVec.size(); i++)
-	{
-		Vector3 n = elementVec[i].MaxPlane.Normal();
-		n.Normalize();
-
-		bool exist = polygon.FaceVec.end() !=
-			std::find_if(polygon.FaceVec.begin(), polygon.FaceVec.end(), [&](const PolygonFace& f)
-{
-	Vector3 fn = f.GetNormal();
-	return (1 - fn.Dot(n)) < 1e-4 && std::abs(f.FacePlane.w - elementVec[i].MaxPlane.w) < 1e-4;
-			});
-
-		if (TRUE == exist)
-			continue;
-
-		outPolygon = VMACH::Polygon3D::ClipWithPlane(outPolygon, elementVec[i].MaxPlane);
-	}
-
-	return outPolygon;
-}
-
-void VMACH::Kdop::Render(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData)
-{
-	const auto collectPolygonFaces = [&](Plane p, Vector3 x)
-	{
-		VMACH::PolygonFace cf = { true };
-
-		Vector3 n = p.Normal();
-		n.Normalize();
-
-		Vector3 tmp(1, 2, 3);
-		Vector3 u = n.Cross(tmp);
-		u.Normalize();
-
-		Vector3 v = u.Cross(n);
-		v.Normalize();
-
-		// #CORRECTION
-		Vector3 p1 = x + u * 0.3 - v * 0.3;
-		Vector3 p2 = x + u * 0.3 + v * 0.3;
-		Vector3 p3 = x - u * 0.3 + v * 0.3;
-		Vector3 p4 = x - u * 0.3 - v * 0.3;
-
-		cf.AddVertex(p1);
-		cf.AddVertex(p2);
-		cf.AddVertex(p3);
-		cf.AddVertex(p4);
-		cf.Rewind();
-		return cf;
-	};
-
-	for (int i = 0; i < elementVec.size(); i++)
-	{
-		// #BREAK
-		if (i != 5)
-			continue;
-
-		auto f1 = collectPolygonFaces(elementVec[i].MinPlane, elementVec[i].MinVertex);
-		auto f2 = collectPolygonFaces(elementVec[i].MaxPlane, elementVec[i].MaxVertex);
-
-		f1.Render(vertexData, indexData);
-		f2.Render(vertexData, indexData);
 	}
 }
 
