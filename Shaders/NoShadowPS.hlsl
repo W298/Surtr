@@ -1,22 +1,5 @@
 #define PI 3.1415926538
 
-
-//--------------------------------------------------------------------------------------
-// Constant Buffer Variables
-//--------------------------------------------------------------------------------------
-struct OpaqueCBType
-{
-    float4x4 worldMatrix;
-    float4x4 viewProjMatrix;
-    float4 cameraPosition;
-    float4 lightDirection;
-    float4 lightColor;
-    float4x4 shadowTransform;
-};
-
-ConstantBuffer<OpaqueCBType> cb : register(b0);
-
-
 //--------------------------------------------------------------------------------------
 // I/O Structures
 //--------------------------------------------------------------------------------------

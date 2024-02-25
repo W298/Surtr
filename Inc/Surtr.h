@@ -46,15 +46,19 @@ public:
 
 private:
 
+	struct MeshSB
+	{
+		XMFLOAT4X4 WorldMatrix;
+	};
+
 	struct OpaqueCB
 	{
-		XMMATRIX	WorldMatrix;
 		XMMATRIX	ViewProjMatrix;
 		XMFLOAT4	CameraPosition;
 		XMFLOAT4	LightDirection;
 		XMFLOAT4	LightColor;
 		XMMATRIX	ShadowTransform;
-		uint8_t		Padding[16];
+		uint8_t		Padding[80];
 	};
 
 	struct ShadowCB
@@ -184,14 +188,14 @@ private:
 													  _In_ const std::vector<uint32_t>& indices);
 
 	// Constants
-	static constexpr XMVECTORF32               GRAY = { 0.15f, 0.15f, 0.15f, 1.0f };
-	static constexpr XMVECTORF32               DEFAULT_UP_VECTOR = { 0.f, 1.f, 0.f, 0.f };
-	static constexpr XMVECTORF32               DEFAULT_FORWARD_VECTOR = { 0.f, 0.f, 1.f, 0.f };
-	static constexpr XMVECTORF32               DEFAULT_RIGHT_VECTOR = { 1.f, 0.f, 0.f, 0.f };
-	static constexpr XMFLOAT4X4                IDENTITY_MATRIX = { 1.f, 0.f, 0.f, 0.f,
-																			0.f, 1.f, 0.f, 0.f,
-																			0.f, 0.f, 1.f, 0.f,
-																			0.f, 0.f, 0.f, 1.f };
+	static constexpr XMVECTORF32						GRAY					= { 0.15f, 0.15f, 0.15f, 1.0f };
+	static constexpr XMVECTORF32						DEFAULT_UP_VECTOR		= { 0.f, 1.f, 0.f, 0.f };
+	static constexpr XMVECTORF32						DEFAULT_FORWARD_VECTOR	= { 0.f, 0.f, 1.f, 0.f };
+	static constexpr XMVECTORF32						DEFAULT_RIGHT_VECTOR	= { 1.f, 0.f, 0.f, 0.f };
+	static constexpr XMFLOAT4X4							IDENTITY_MATRIX			= { 1.f, 0.f, 0.f, 0.f,
+																					0.f, 1.f, 0.f, 0.f,
+																					0.f, 0.f, 1.f, 0.f,
+																					0.f, 0.f, 0.f, 1.f };
 
 	// Input
 	std::unordered_map<UINT8, bool>                     m_keyTracker;
@@ -203,10 +207,13 @@ private:
 	int                                                 m_outputHeight;
 	float											    m_aspectRatio;
 	bool												m_fullScreenMode;
-	static constexpr DXGI_FORMAT                        c_backBufferFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
-	static constexpr DXGI_FORMAT                        c_rtvFormat = DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
-	static constexpr DXGI_FORMAT                        c_depthBufferFormat = DXGI_FORMAT_D32_FLOAT;
-	static constexpr UINT                               c_swapBufferCount = 3;
+	static constexpr DXGI_FORMAT                        c_backBufferFormat		= DXGI_FORMAT_B8G8R8A8_UNORM;
+	static constexpr DXGI_FORMAT                        c_rtvFormat				= DXGI_FORMAT_B8G8R8A8_UNORM_SRGB;
+	static constexpr DXGI_FORMAT                        c_depthBufferFormat		= DXGI_FORMAT_D32_FLOAT;
+	static constexpr UINT                               c_swapBufferCount		= 3;
+	
+	// #TODO : Currently set count as constant.
+	static constexpr UINT								c_nSBCnt				= 100;
 
 	// Back buffer index
 	UINT                                                m_backBufferIndex;
@@ -237,6 +244,7 @@ private:
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>        m_rtvDescriptorHeap;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>        m_dsvDescriptorHeap;
 	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>        m_srvDescriptorHeap;
+	Microsoft::WRL::ComPtr<ID3D12DescriptorHeap>        m_srvDescriptorHeapSB;
 
 	// Root signature and pipeline state objects
 	Microsoft::WRL::ComPtr<ID3D12RootSignature>         m_rootSignature;
@@ -249,10 +257,13 @@ private:
 	// CB
 	Microsoft::WRL::ComPtr<ID3D12Resource>              m_cbOpaqueUploadHeap;
 	Microsoft::WRL::ComPtr<ID3D12Resource>              m_cbShadowUploadHeap;
-	OpaqueCB* m_cbOpaqueMappedData;
-	ShadowCB* m_cbShadowMappedData;
+	OpaqueCB*											m_cbOpaqueMappedData;
+	ShadowCB*											m_cbShadowMappedData;
 	D3D12_GPU_VIRTUAL_ADDRESS						    m_cbOpaqueGpuAddress;
 	D3D12_GPU_VIRTUAL_ADDRESS						    m_cbShadowGpuAddress;
+
+	// Structured Buffer
+	Microsoft::WRL::ComPtr<ID3D12Resource>              m_structuredBuffer;
 
 	// Resources
 	Microsoft::WRL::ComPtr<IDXGISwapChain3>             m_swapChain;

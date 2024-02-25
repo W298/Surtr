@@ -18,12 +18,12 @@ const auto rnd = []() { return double(rand() * 0.75) / RAND_MAX; };
 
 static PxDefaultAllocator			gAllocator;
 static PxDefaultErrorCallback		gErrorCallback;
-static PxFoundation*				gFoundation = NULL;
-static PxPhysics*					gPhysics = NULL;
-static PxDefaultCpuDispatcher*		gDispatcher = NULL;
-static PxScene*						gScene = NULL;
-static PxMaterial*					gMaterial = NULL;
-static PxPvd*						gPvd = NULL;
+static PxFoundation*				gFoundation			= NULL;
+static PxPhysics*					gPhysics			= NULL;
+static PxDefaultCpuDispatcher*		gDispatcher			= NULL;
+static PxScene*						gScene				= NULL;
+static PxMaterial*					gMaterial			= NULL;
+static PxPvd*						gPvd				= NULL;
 
 Surtr::Surtr() noexcept :
 	m_window(nullptr),
@@ -56,7 +56,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT mode
 	m_outputHeight = std::max(height, 1);
 	m_aspectRatio = static_cast<float>(m_outputWidth) / static_cast<float>(m_outputHeight);
 	m_fullScreenMode = fullScreenMode;
-
 	m_modelIndex = modelIndex;
 
 	// Initialize values.
@@ -367,6 +366,7 @@ void Surtr::Render()
 	// Set root signature & descriptor table.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 	m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+	m_commandList->SetGraphicsRootDescriptorTable(4, m_srvDescriptorHeapSB->GetGPUDescriptorHandleForHeapStart());
 
 	// PASS 1 - Shadow Map
 	if (m_renderShadow)
@@ -439,7 +439,6 @@ void Surtr::Render()
 		{
 			OpaqueCB cbOpaque;
 
-			cbOpaque.WorldMatrix = XMMatrixTranspose(m_worldMatrix);
 			cbOpaque.ViewProjMatrix = XMMatrixTranspose(m_viewMatrix * m_projectionMatrix);
 			XMStoreFloat4(&cbOpaque.CameraPosition, m_camPosition);
 			XMStoreFloat4(&cbOpaque.LightDirection, m_lightDirection);
@@ -868,6 +867,17 @@ void Surtr::CreateDeviceDependentResources()
 			m_d3dDevice->CreateDescriptorHeap(
 				&srvDescriptorHeapDesc,
 				IID_PPV_ARGS(m_srvDescriptorHeap.ReleaseAndGetAddressOf())));
+
+		// Create SRV descriptor heap (for structured bufer).
+		D3D12_DESCRIPTOR_HEAP_DESC srvDescriptorHeapSBDesc = {};
+		srvDescriptorHeapSBDesc.NumDescriptors = 1;
+		srvDescriptorHeapSBDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		srvDescriptorHeapSBDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+		DX::ThrowIfFailed(
+			m_d3dDevice->CreateDescriptorHeap(
+				&srvDescriptorHeapSBDesc,
+				IID_PPV_ARGS(m_srvDescriptorHeapSB.ReleaseAndGetAddressOf())));
 	}
 
 	// ================================================================================================================
@@ -876,13 +886,17 @@ void Surtr::CreateDeviceDependentResources()
 	{
 		// Define root parameters.
 		CD3DX12_DESCRIPTOR_RANGE srvTable;
-		srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);
+		srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);		// register (t0)
 
-		CD3DX12_ROOT_PARAMETER rootParameters[4] = {};
-		rootParameters[0].InitAsDescriptorTable(1, &srvTable);  // register (t0)
-		rootParameters[1].InitAsConstantBufferView(0);          // register (c0)
-		rootParameters[2].InitAsConstantBufferView(1);          // register (c1)
-		rootParameters[3].InitAsConstants(1u, 4u);
+		CD3DX12_DESCRIPTOR_RANGE srvTableSB;
+		srvTableSB.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 7);		// register (t7)
+
+		CD3DX12_ROOT_PARAMETER rootParameters[5] = {};
+		rootParameters[0].InitAsDescriptorTable(1, &srvTable);  
+		rootParameters[1].InitAsConstantBufferView(0);				// register (b0)
+		rootParameters[2].InitAsConstantBufferView(1);				// register (b1)
+		rootParameters[3].InitAsConstants(1u, 4u);					// register (b4, space0)
+		rootParameters[4].InitAsDescriptorTable(1, &srvTableSB);
 
 		// Define samplers.
 		const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(
@@ -1324,12 +1338,59 @@ void Surtr::CreateCommandListDependentResources()
 	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
+	// ================================================================================================================
+	// #01. Create structured buffer.
+	// ================================================================================================================
+	{
+		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
+		CD3DX12_RESOURCE_DESC resDesc = CD3DX12_RESOURCE_DESC::Buffer(c_nSBCnt * sizeof(MeshSB));
+		DX::ThrowIfFailed(
+			m_d3dDevice->CreateCommittedResource(
+				&uploadHeapProp,
+				D3D12_HEAP_FLAG_NONE,
+				&resDesc,
+				D3D12_RESOURCE_STATE_GENERIC_READ,
+				nullptr,
+				IID_PPV_ARGS(m_structuredBuffer.ReleaseAndGetAddressOf())));
+
+		// Upload structured data.
+		//#TODO : Currently update data manually.
+		CD3DX12_RANGE readRange(0, 0);
+		UINT8* bufferBegin = nullptr;
+
+		std::vector<MeshSB> sbData(c_nSBCnt, MeshSB(IDENTITY_MATRIX));
+
+		XMFLOAT4X4 mat = {};
+		XMFLOAT4X4 mat2 = {};
+		
+		XMStoreFloat4x4(&mat, XMMatrixTranspose(XMMatrixTranslation(0, 10, 0)));
+		XMStoreFloat4x4(&mat2, XMMatrixTranspose(XMMatrixTranslation(10, 0, 0)));
+		
+		sbData[0].WorldMatrix = mat;
+		sbData[2].WorldMatrix = mat2;
+
+		DX::ThrowIfFailed(m_structuredBuffer->Map(0, &readRange, reinterpret_cast<void**>(&bufferBegin)));
+		memcpy(bufferBegin, sbData.data(), sizeof(MeshSB) * sbData.size());
+		m_structuredBuffer->Unmap(0, nullptr);
+
+		// Create SRV.
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Buffer.FirstElement = 0;
+		srvDesc.Buffer.NumElements = c_nSBCnt;
+		srvDesc.Buffer.StructureByteStride = sizeof(MeshSB);
+		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+		m_d3dDevice->CreateShaderResourceView(m_structuredBuffer.Get(), &srvDesc, m_srvDescriptorHeapSB->GetCPUDescriptorHandleForHeapStart());
+	}
+
 	// Pre-declare upload heap.
 	// Because they must be alive until GPU work (upload) is done.
 	ComPtr<ID3D12Resource> textureUploadHeaps[4];
 
 	// ================================================================================================================
-	// #01. Create texture resources & views.
+	// #02. Create texture resources & views.
 	// ================================================================================================================
 	{
 		CreateTextureResource(
@@ -1355,7 +1416,7 @@ void Surtr::CreateCommandListDependentResources()
 	}
 
 	// ================================================================================================================
-	// #02. Load model vertices and indices.
+	// #03. Load model vertices and indices.
 	// ================================================================================================================
 
 	std::vector<VertexNormalColor> objectVertexData;
@@ -1386,6 +1447,7 @@ void Surtr::CreateCommandListDependentResources()
 		break;
 	}
 
+	// Sphere point cloud.
 	{
 		std::vector<VertexNormalColor> sphv;
 		std::vector<uint32_t> sphi;
@@ -1395,25 +1457,27 @@ void Surtr::CreateCommandListDependentResources()
 		std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
 	}
 
-	StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
-	objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
-	m_meshVec.push_back(objectModel);
+	{
+		StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
+		objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
+		m_meshVec.push_back(objectModel);
 
-	std::vector<VertexNormalColor> groundVertexData;
-	std::vector<uint32_t> groundIndexData;
-	LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
+		std::vector<VertexNormalColor> groundVertexData;
+		std::vector<uint32_t> groundIndexData;
+		LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
 
-	StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
-	m_meshVec.push_back(groundModel);
+		StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
+		m_meshVec.push_back(groundModel);
 
-	std::vector<VertexNormalColor> fracturedVertexData;
-	std::vector<uint32_t> fracturedIndexData;
+		std::vector<VertexNormalColor> fracturedVertexData;
+		std::vector<uint32_t> fracturedIndexData;
 
-	PrepareFracture(objectVertexData, objectIndexData);
-	DoFracture(fracturedVertexData, fracturedIndexData);
+		PrepareFracture(objectVertexData, objectIndexData);
+		DoFracture(fracturedVertexData, fracturedIndexData);
 
-	DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
-	m_meshVec.push_back(fractureModel);
+		DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
+		m_meshVec.push_back(fractureModel);
+	}
 
 	// <---------- Close command list.
 	DX::ThrowIfFailed(m_commandList->Close());
@@ -1552,6 +1616,9 @@ void Surtr::OnDeviceLost()
 	// Shadow map
 	m_shadowMap.reset();
 
+	// SB
+	m_structuredBuffer.Reset();
+
 	// CB
 	m_cbOpaqueUploadHeap.Reset();
 	m_cbShadowUploadHeap.Reset();
@@ -1562,6 +1629,7 @@ void Surtr::OnDeviceLost()
 	m_rtvDescriptorHeap.Reset();
 	m_dsvDescriptorHeap.Reset();
 	m_srvDescriptorHeap.Reset();
+	m_srvDescriptorHeapSB.Reset();
 
 	// Command objects
 	m_commandQueue.Reset();

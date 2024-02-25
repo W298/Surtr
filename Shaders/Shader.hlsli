@@ -2,11 +2,10 @@
 
 
 //--------------------------------------------------------------------------------------
-// Constant Buffer Variables
+// Constant Buffer / Root Constant Variables
 //--------------------------------------------------------------------------------------
 struct OpaqueCBType
 {
-    float4x4 worldMatrix;
     float4x4 viewProjMatrix;
     float4 cameraPosition;
     float4 lightDirection;
@@ -14,13 +13,25 @@ struct OpaqueCBType
     float4x4 shadowTransform;
 };
 
-struct DrawConstants
+struct RootConstantType
 {
-    uint32_t val;
+    uint32_t value;
 };
 
 ConstantBuffer<OpaqueCBType> cb : register(b0);
-ConstantBuffer<DrawConstants> dc : register(b4, space0);
+ConstantBuffer<RootConstantType> meshID : register(b4, space0);
+
+
+//--------------------------------------------------------------------------------------
+// Structured Buffer Variables
+//--------------------------------------------------------------------------------------
+struct MeshSBType
+{
+    float4x4 worldMatrix;
+};
+
+StructuredBuffer<MeshSBType> sb : register(t7);
+
 
 //--------------------------------------------------------------------------------------
 // I/O Structures
@@ -62,8 +73,8 @@ VS_OUTPUT VS(VS_INPUT input)
 {
     VS_OUTPUT output;
     
-    // Multiply MVP matrices.
-    output.position = mul(float4(input.position, 1.0f), cb.worldMatrix);
+    // Multiply WVP matrices.
+    output.position = mul(float4(input.position, 1.0f), sb[meshID.value].worldMatrix);
     output.position = mul(output.position, cb.viewProjMatrix);
     
     output.normal = input.normal;
