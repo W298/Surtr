@@ -2,14 +2,28 @@
 #include "Surtr.h"
 
 #include "voro++.hh"
+#include <PxPhysicsAPI.h>
+
+#define PVD_HOST "127.0.0.1"
+#define MAX_NUM_ACTOR_SHAPES 128
 
 extern void ExitGame() noexcept;
 
 using namespace DirectX;
 using namespace SimpleMath;
 using Microsoft::WRL::ComPtr;
+using namespace physx;
 
 const auto rnd = []() { return double(rand() * 0.75) / RAND_MAX; };
+
+static PxDefaultAllocator			gAllocator;
+static PxDefaultErrorCallback		gErrorCallback;
+static PxFoundation*				gFoundation = NULL;
+static PxPhysics*					gPhysics = NULL;
+static PxDefaultCpuDispatcher*		gDispatcher = NULL;
+static PxScene*						gScene = NULL;
+static PxMaterial*					gMaterial = NULL;
+static PxPvd*						gPvd = NULL;
 
 Surtr::Surtr() noexcept :
 	m_window(nullptr),
@@ -184,6 +198,37 @@ void Surtr::OnMouseDown()
 		m_fractureArgs.ImpactPosition = ray.position + ray.direction * (minDist + 0.01);
 }
 
+static void renderGeometry(const PxGeometry& geom)
+{
+	switch (geom.getType())
+	{
+	case PxGeometryType::eBOX:
+	{
+		const PxBoxGeometry& boxGeom = static_cast<const PxBoxGeometry&>(geom);
+	}
+	break;
+	}
+}
+
+void renderActors(PxRigidActor** actors, const PxU32 numActors)
+{
+	PxShape* shapes[MAX_NUM_ACTOR_SHAPES];
+	for (PxU32 i = 0; i < numActors; i++)
+	{
+		const PxU32 nbShapes = actors[i]->getNbShapes();
+		PX_ASSERT(nbShapes <= MAX_NUM_ACTOR_SHAPES);
+		actors[i]->getShapes(shapes, nbShapes);
+
+		for (PxU32 j = 0; j < nbShapes; j++)
+		{
+			const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[j], *actors[i]));
+			const PxGeometry& geom = shapes[j]->getGeometry();
+
+			renderGeometry(geom);
+		}
+	}
+}
+
 // Updates the world.
 void Surtr::Update(DX::StepTimer const& timer)
 {
@@ -259,6 +304,18 @@ void Surtr::Update(DX::StepTimer const& timer)
 		XMStoreFloat4x4(&m_lightView, lightView);
 		XMStoreFloat4x4(&m_lightProj, lightProj);
 		XMStoreFloat4x4(&m_shadowTransform, S);
+	}
+
+	// Step physx simulation.
+	gScene->simulate(elapsedTime);
+	gScene->fetchResults(true);
+
+	PxU32 nbActors = gScene->getNbActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC);
+	if (nbActors)
+	{
+		std::vector<PxRigidActor*> actors(nbActors);
+		gScene->getActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC, reinterpret_cast<PxActor**>(&actors[0]), nbActors);
+		renderActors(&actors[0], static_cast<PxU32>(actors.size()));
 	}
 }
 
@@ -757,6 +814,24 @@ void Surtr::CreateDeviceResources()
 	}
 }
 
+static PxReal stackZ = 10.0f;
+static void createStack(const PxTransform& t, PxU32 size, PxReal halfExtent)
+{
+	PxShape* shape = gPhysics->createShape(PxBoxGeometry(halfExtent, halfExtent, halfExtent), *gMaterial);
+	for (PxU32 i = 0; i < size; i++)
+	{
+		for (PxU32 j = 0; j < size - i; j++)
+		{
+			PxTransform localTm(PxVec3(PxReal(j * 2) - PxReal(size - i), PxReal(i * 2 + 1), 0) * halfExtent);
+			PxRigidDynamic* body = gPhysics->createRigidDynamic(t.transform(localTm));
+			body->attachShape(*shape);
+			PxRigidBodyExt::updateMassAndInertia(*body, 10.0f);
+			gScene->addActor(*body);
+		}
+	}
+	shape->release();
+}
+
 void Surtr::CreateDeviceDependentResources()
 {
 	// ================================================================================================================
@@ -1043,6 +1118,42 @@ void Surtr::CreateDeviceDependentResources()
 
 		// Setup Dear ImGui style
 		ImGui::StyleColorsDark();
+	}
+
+	// ================================================================================================================
+	// #07. Setup Physx.
+	// ================================================================================================================
+	{
+		gFoundation = PxCreateFoundation(PX_PHYSICS_VERSION, gAllocator, gErrorCallback);
+
+		gPvd = PxCreatePvd(*gFoundation);
+		PxPvdTransport* transport = PxDefaultPvdSocketTransportCreate(PVD_HOST, 5425, 10);
+		gPvd->connect(*transport, PxPvdInstrumentationFlag::eALL);
+
+		gPhysics = PxCreatePhysics(PX_PHYSICS_VERSION, *gFoundation, PxTolerancesScale(), true, gPvd);
+
+		PxSceneDesc sceneDesc(gPhysics->getTolerancesScale());
+		sceneDesc.gravity = PxVec3(0.0f, -9.81f, 0.0f);
+		gDispatcher = PxDefaultCpuDispatcherCreate(2);
+		sceneDesc.cpuDispatcher = gDispatcher;
+		sceneDesc.filterShader = PxDefaultSimulationFilterShader;
+		gScene = gPhysics->createScene(sceneDesc);
+
+		PxPvdSceneClient* pvdClient = gScene->getScenePvdClient();
+		if (pvdClient)
+		{
+			pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONSTRAINTS, true);
+			pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_CONTACTS, true);
+			pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
+		}
+		gMaterial = gPhysics->createMaterial(0.5f, 0.5f, 0.6f);
+
+		PxRigidStatic* groundPlane = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 0), *gMaterial);
+		gScene->addActor(*groundPlane);
+
+		// Generate test actors.
+		for (PxU32 i = 0; i < 5; i++)
+			createStack(PxTransform(PxVec3(0, 0, stackZ -= 10.0f)), 10, 2.0f);
 	}
 }
 
@@ -1405,6 +1516,18 @@ void Surtr::OnDeviceLost()
 	ImGui_ImplDX12_Shutdown();
 	ImGui_ImplWin32_Shutdown();
 	ImGui::DestroyContext();
+
+	// Physx
+	PX_RELEASE(gScene);
+	PX_RELEASE(gDispatcher);
+	PX_RELEASE(gPhysics);
+	if (gPvd)
+	{
+		PxPvdTransport* transport = gPvd->getTransport();
+		gPvd->release();	gPvd = NULL;
+		PX_RELEASE(transport);
+	}
+	PX_RELEASE(gFoundation);
 
 	// Shadow
 	m_shadowMap.reset();
