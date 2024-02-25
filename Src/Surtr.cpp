@@ -421,7 +421,7 @@ void Surtr::Render()
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
 				if (StaticMesh::RenderOptionType::NOT_RENDER ^ m_meshVec[i]->RenderOption)
-					m_meshVec[i]->Render(m_commandList.Get());
+					m_meshVec[i]->Render(m_commandList.Get(), i);
 			}
 		}
 		// <--- GENERIC_READ
@@ -488,7 +488,7 @@ void Surtr::Render()
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
 				if (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
-					m_meshVec[i]->Render(m_commandList.Get());
+					m_meshVec[i]->Render(m_commandList.Get(), i);
 			}
 
 			m_commandList->SetPipelineState(m_wireframePSO.Get());
@@ -496,7 +496,7 @@ void Surtr::Render()
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
 				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
-					m_meshVec[i]->Render(m_commandList.Get());
+					m_meshVec[i]->Render(m_commandList.Get(), i);
 			}
 
 			m_commandList->SetPipelineState(m_coloredWireframePSO.Get());
@@ -504,7 +504,7 @@ void Surtr::Render()
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
 				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && !(StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
-					m_meshVec[i]->Render(m_commandList.Get());
+					m_meshVec[i]->Render(m_commandList.Get(), i);
 			}
 
 			// Draw imgui.
@@ -878,10 +878,11 @@ void Surtr::CreateDeviceDependentResources()
 		CD3DX12_DESCRIPTOR_RANGE srvTable;
 		srvTable.Init(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 6, 0);
 
-		CD3DX12_ROOT_PARAMETER rootParameters[3] = {};
+		CD3DX12_ROOT_PARAMETER rootParameters[4] = {};
 		rootParameters[0].InitAsDescriptorTable(1, &srvTable);  // register (t0)
 		rootParameters[1].InitAsConstantBufferView(0);          // register (c0)
 		rootParameters[2].InitAsConstantBufferView(1);          // register (c1)
+		rootParameters[3].InitAsConstants(1u, 4u);
 
 		// Define samplers.
 		const CD3DX12_STATIC_SAMPLER_DESC anisotropicClamp(

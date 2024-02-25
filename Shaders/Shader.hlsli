@@ -14,8 +14,13 @@ struct OpaqueCBType
     float4x4 shadowTransform;
 };
 
-ConstantBuffer<OpaqueCBType> cb : register(b0);
+struct DrawConstants
+{
+    uint32_t val;
+};
 
+ConstantBuffer<OpaqueCBType> cb : register(b0);
+ConstantBuffer<DrawConstants> dc : register(b4, space0);
 
 //--------------------------------------------------------------------------------------
 // I/O Structures
