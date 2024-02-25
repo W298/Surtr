@@ -337,8 +337,7 @@ void VMACH::PolygonFace::__Reorder()
 			  });
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, const Plane& clippingPlane,
-													 std::vector<PolygonEdge>& edgeVec)
+VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, const Plane& clippingPlane, std::vector<PolygonEdge>& edgeVec)
 {
 	PolygonFace workingFace = { inFace.GuaranteeConvex };
 	PolygonEdge clippedEdge;
@@ -463,8 +462,7 @@ VMACH::PolygonFace VMACH::PolygonFace::ClipWithPlane(const PolygonFace& inFace, 
 	return (workingFace.VertexVec.size() >= 3) ? workingFace : PolygonFace(inFace.GuaranteeConvex);
 }
 
-VMACH::PolygonFace VMACH::PolygonFace::ClipWithFace(const PolygonFace& inFace, const PolygonFace& clippingFace,
-													std::vector<PolygonEdge>& edgeVec)
+VMACH::PolygonFace VMACH::PolygonFace::ClipWithFace(const PolygonFace& inFace, const PolygonFace& clippingFace, std::vector<PolygonEdge>& edgeVec)
 {
 	return ClipWithPlane(inFace, clippingFace.FacePlane, edgeVec);
 }
@@ -560,19 +558,6 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 	Polygon3D outPolygon = { inPolygon.GuaranteeConvex };
 	for (int i = 0; i < inPolygon.FaceVec.size(); i++)
 	{
-		// #BREAK
-		/*if (doTest == 1 && i > 22)
-			continue;*/
-
-			/*if (doTest == 1 && i == 22)
-			{
-				outPolygon.AddFace(inPolygon.FaceVec[i]);
-				continue;
-			}*/
-
-			/*if (doTest == 1)
-				OutputDebugStringWFormat(L"%d\n", i);*/
-
 		PolygonFace clippedFace = PolygonFace::ClipWithPlane(inPolygon.FaceVec[i], clippingPlane, edgeVec);
 
 		if (FALSE == clippedFace.GuaranteeConvex && clippedFace.VertexVec.size() >= 3)
@@ -848,11 +833,12 @@ VMACH::Polygon3D VMACH::Polygon3D::ClipWithPlane(const Polygon3D& inPolygon, con
 		Vector3 n = clippingPlane.Normal();
 		n.Normalize();
 
-		std::sort(intersectPointVec.begin() + 1, intersectPointVec.end(), [&](const Vector3& a, const Vector3& b)
- {
-	 return GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, a - centroid, n) <
-		 GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, b - centroid, n);
-		});
+		std::sort(intersectPointVec.begin() + 1, intersectPointVec.end(), 
+				  [&](const Vector3& a, const Vector3& b)
+				  {
+					  return GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, a - centroid, n) <
+						  GetAngleBetweenTwoVectorsOnPlane(intersectPointVec[0] - centroid, b - centroid, n);
+				  });
 
 		PolygonFace face = { true };
 		for (int i = 0; i < intersectPointVec.size(); i++)

@@ -2,8 +2,6 @@
 #include "Surtr.h"
 
 #include "voro++.hh"
-#include "DT.h"
-#include "DT3D.h"
 
 extern void ExitGame() noexcept;
 
@@ -272,13 +270,11 @@ void Surtr::UpdateMesh()
 		DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 		DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
-		auto achVertexData = std::vector<VertexNormalColor>();
-		auto achIndexData = std::vector<uint32_t>();
-
-		DoFracture(m_meshVec[0]->VertexData, m_meshVec[0]->IndexData, achVertexData, achIndexData);
-
-		delete m_meshVec[2];
-		m_meshVec[2] = PrepareMeshResource(achVertexData, achIndexData);
+		std::vector<VertexNormalColor> fracturedVertexData;
+		std::vector<uint32_t> fracturedIndexData;
+		DoFracture(fracturedVertexData, fracturedIndexData);
+		
+		UpdateDynamicMesh((DynamicMesh*)m_meshVec[2], fracturedVertexData, fracturedIndexData);
 
 		m_executeNextStep = false;
 
@@ -367,7 +363,7 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (Mesh::RenderOptionType::NOT_RENDER ^ m_meshVec[i]->RenderOption)
+				if (StaticMesh::RenderOptionType::NOT_RENDER ^ m_meshVec[i]->RenderOption)
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
 		}
@@ -434,7 +430,7 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
+				if (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
 
@@ -442,7 +438,7 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if ((Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && (Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
+				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
 
@@ -450,7 +446,7 @@ void Surtr::Render()
 
 			for (int i = 0; i < m_meshVec.size(); i++)
 			{
-				if ((Mesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && !(Mesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
+				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && !(StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
 					m_meshVec[i]->Render(m_commandList.Get());
 			}
 
@@ -523,29 +519,29 @@ void Surtr::Render()
 
 					ImGui::Text("Object Render Mode");
 					if (ImGui::Button("NOT_RENDER"))
-						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::NOT_RENDER;
+						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
 					ImGui::SameLine();
 					if (ImGui::Button("SOLID"))
-						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::SOLID;
+						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::SOLID;
 					ImGui::SameLine();
 					if (ImGui::Button("WIREFRAME"))
-						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::WIREFRAME;
+						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::WIREFRAME;
 					ImGui::SameLine();
 					if (ImGui::Button("BOTH"))
-						m_meshVec[0]->RenderOption = Mesh::RenderOptionType::SOLID | Mesh::RenderOptionType::WIREFRAME;
+						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::SOLID | StaticMesh::RenderOptionType::WIREFRAME;
 
 					ImGui::Text("Convex Render Mode");
 					if (ImGui::Button("_NOT_RENDER"))
-						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::NOT_RENDER;
+						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
 					ImGui::SameLine();
 					if (ImGui::Button("_SOLID"))
-						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::SOLID;
+						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::SOLID;
 					ImGui::SameLine();
 					if (ImGui::Button("_WIREFRAME"))
-						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::WIREFRAME;
+						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::WIREFRAME;
 					ImGui::SameLine();
 					if (ImGui::Button("_BOTH"))
-						m_meshVec[2]->RenderOption = Mesh::RenderOptionType::SOLID | Mesh::RenderOptionType::WIREFRAME;
+						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::SOLID | StaticMesh::RenderOptionType::WIREFRAME;
 
 					ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -1278,48 +1274,40 @@ void Surtr::CreateCommandListDependentResources()
 		break;
 	}
 
-	std::vector<VertexNormalColor> sphv;
-	std::vector<uint32_t> sphi;
-	LoadModelData("Resources\\Models\\sphere.obj", XMFLOAT3(1, 1, 1), XMFLOAT3(0, 0, 0), sphv, sphi);
+	{
+		std::vector<VertexNormalColor> sphv;
+		std::vector<uint32_t> sphi;
+		LoadModelData("Resources\\Models\\sphere.obj", XMFLOAT3(1, 1, 1), XMFLOAT3(0, 0, 0), sphv, sphi);
 
-	m_spherePointCloud = std::vector<Vector3>(sphv.size());
-	std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
+		m_spherePointCloud = std::vector<Vector3>(sphv.size());
+		std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
+	}
 
-	Mesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
+	StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
+	objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
 	m_meshVec.push_back(objectModel);
 
 	std::vector<VertexNormalColor> groundVertexData;
 	std::vector<uint32_t> groundIndexData;
 	LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
 
-	Mesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
+	StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
 	m_meshVec.push_back(groundModel);
 
-	// ================================================================================================================
-	// #03. Create Approximate Convex Hull with VMACH (Volume Maximize Approximate Convex Hull) method.
-	// ================================================================================================================
+	std::vector<VertexNormalColor> fracturedVertexData;
+	std::vector<uint32_t> fracturedIndexData;
 
-	std::vector<VertexNormalColor> convexHullVertexData;
-	std::vector<uint32_t> convexHullIndexData;
-	DoFracture(objectVertexData, objectIndexData, convexHullVertexData, convexHullIndexData);
+	PrepareFracture(objectVertexData, objectIndexData);
+	DoFracture(fracturedVertexData, fracturedIndexData);
 
-	if (convexHullVertexData.size() > 0 && convexHullIndexData.size() > 0)
-	{
-		Mesh* bbModel = PrepareMeshResource(
-			convexHullVertexData,
-			convexHullIndexData);
-
-		m_meshVec.push_back(bbModel);
-	}
+	DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
+	m_meshVec.push_back(fractureModel);
 
 	// <---------- Close command list.
 	DX::ThrowIfFailed(m_commandList->Close());
 	m_commandQueue->ExecuteCommandLists(1, CommandListCast(m_commandList.GetAddressOf()));
 
 	WaitForGpu();
-
-	// TestACHCreation(objectVertexData);
-	// TestECHCreation(objectVertexData);
 
 	// Release no longer needed upload heaps.
 	for (int i = 0; i < 4; i++)
@@ -1470,31 +1458,8 @@ void Surtr::OnDeviceLost()
 	CreateCommandListDependentResources();
 }
 
-void Surtr::DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
-					   _In_ const std::vector<uint32_t>& visualMeshIndices,
-					   _Out_ std::vector<VertexNormalColor>& achVertexData,
-					   _Out_ std::vector<uint32_t>& achIndexData)
+void Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices, _In_ const std::vector<uint32_t>& visualMeshIndices)
 {
-	achVertexData = std::vector<VertexNormalColor>();
-	achIndexData = std::vector<uint32_t>();
-
-	const auto renderPolygon = [&achVertexData, &achIndexData](VMACH::Polygon3D polygon, const Vector3& center, const int scalar)
-	{
-		if (polygon.FaceVec.size() == 0)
-			return;
-
-		double a, b, c;
-		a = rnd(); b = rnd(); c = rnd();
-		XMFLOAT3 color(a, b, c);
-
-		Vector3 outer = polygon.GetCentroid() - center;
-		outer.Normalize();
-		outer *= scalar;
-
-		polygon.Translate(outer);
-		polygon.Render(achVertexData, achIndexData, color);
-	};
-
 	// 1. Create intermediate convex hull with limit count.
 	std::vector<Vector3> vertices(visualMeshVertices.size());
 	std::transform(visualMeshVertices.begin(), visualMeshVertices.end(), vertices.begin(), [](const VertexNormalColor& vertex) { return vertex.Position; });
@@ -1515,18 +1480,20 @@ void Surtr::DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVert
 		minZ = (*z.first).z;    maxZ = (*z.second).z;
 	}
 
-	Vector3 bbCenter((maxX + minX) / 2.0, (maxY + minY) / 2.0, (maxZ + minZ) / 2.0);
-	double maxAxisScale = std::max(std::max(maxX - minX, maxY - minY), maxZ - minZ);
+	m_fractureStorage.BBCenter = Vector3((maxX + minX) / 2.0, (maxY + minY) / 2.0, (maxZ + minZ) / 2.0);
+	m_fractureStorage.MinBB = Vector3(minX, minY, minZ);
+	m_fractureStorage.MaxBB = Vector3(maxX, maxY, maxZ);
+	m_fractureStorage.MaxAxisScale = std::max(std::max(maxX - minX, maxY - minY), maxZ - minZ);
 
 	// 4. Calculate min/max plane for k-DOP generation.
 	Kdop::KdopContainer achKdop(ichFaceNormalVec);
-	achKdop.Calc(vertices, maxAxisScale, m_fractureArgs.ACHPlaneGapInverse);
+	achKdop.Calc(vertices, m_fractureStorage.MaxAxisScale, m_fractureArgs.ACHPlaneGapInverse);
 
 	// 5. Init bounding box polygon.
 	Poly::Polyhedron achPolyhedron = Poly::GetBB();
 	Poly::Scale(achPolyhedron, Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
 	Poly::Scale(achPolyhedron, Vector3(2.0, 2.0, 2.0));
-	Poly::Translate(achPolyhedron, bbCenter);
+	Poly::Translate(achPolyhedron, m_fractureStorage.BBCenter);
 
 	// 6. Clip ACH polygon with clipping faces.
 	achPolyhedron = achKdop.ClipWithPolyhedron(achPolyhedron);
@@ -1546,20 +1513,57 @@ void Surtr::DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVert
 	for (VMACH::Polygon3D& voro : voroPolyVec)
 	{
 		voro.Scale(Vector3((maxX - minX), (maxY - minY), (maxZ - minZ)));
-		voro.Translate(bbCenter);
+		voro.Translate(m_fractureStorage.BBCenter);
 	}
 
 	// 9. Generate Fracture Pattern.
-	std::vector<VMACH::Polygon3D> fractureVoroPolyVec = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
-	for (VMACH::Polygon3D& voro : fractureVoroPolyVec)
-		voro.Scale(Vector3(maxAxisScale, maxAxisScale, maxAxisScale) * 2);
+	m_fractureStorage.FracturePattern = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
+
+	// 10. Generate initial pieces.
+	CompoundInfo preCompound = CompoundInfo({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) }, { { 0 } });
+	m_fractureStorage.InitialCompound = ApplyFracture(preCompound, voroPolyVec, m_spherePointCloud);
+	
+	Refitting(m_fractureStorage.InitialCompound.PieceVec);
+	SetExtract(m_fractureStorage.InitialCompound);
+
+	// For Collision-Ray.
+	for (int p = 0; p < m_fractureStorage.InitialCompound.PieceVec.size(); p++)
+	{
+		const auto& faceVec = m_fractureStorage.InitialCompound.PieceExtractedConvex[p];
+
+		VMACH::Polygon3D polygon3D = { true };
+		for (const auto& faceIndex : faceVec)
+		{
+			VMACH::PolygonFace f = { true };
+			for (int j = 0; j < faceIndex.size(); j++)
+				f.AddVertex(m_fractureStorage.InitialCompound.PieceVec[p].Convex[faceIndex[j]].Position);
+
+			polygon3D.AddFace(f);
+		}
+
+		m_convexVec.push_back(polygon3D);
+	}
+}
+
+void Surtr::DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData,
+					   _Out_ std::vector<uint32_t>& fracturedIndexData)
+{
+	fracturedVertexData = std::vector<VertexNormalColor>();
+	fracturedIndexData = std::vector<uint32_t>();
+
+	std::vector<VMACH::Polygon3D> localFracturePattern = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
+	std::vector<Vector3> localSpherePointCloud = m_spherePointCloud;
+
+	// Scale.
+	for (VMACH::Polygon3D& voro : localFracturePattern)
+		voro.Scale(Vector3(m_fractureStorage.MaxAxisScale, m_fractureStorage.MaxAxisScale, m_fractureStorage.MaxAxisScale) * 2);
 
 	// Alignment.
-	for (VMACH::Polygon3D& voro : fractureVoroPolyVec)
+	for (VMACH::Polygon3D& voro : localFracturePattern)
 		voro.Translate(m_fractureArgs.ImpactPosition);
 
 	// Align sphere point cloud.
-	for (auto& v : m_spherePointCloud)
+	for (auto& v : localSpherePointCloud)
 	{
 		v *= m_fractureArgs.ImpactRadius;
 		v += m_fractureArgs.ImpactPosition;
@@ -1570,44 +1574,24 @@ void Surtr::DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVert
 		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
 		boxPoly.Scale(0.05);
 		boxPoly.Translate(m_fractureArgs.ImpactPosition);
-		boxPoly.Render(achVertexData, achIndexData, Vector3(1, 0, 0));
-	}
-
-	// 10. Generate initial pieces.
-	CompoundInfo initial = ApplyFracture(CompoundInfo({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) }, { { 0 } }), voroPolyVec);
-	Refitting(initial.PieceVec);
-	SetExtract(initial);
-
-	// For Collision-Ray.
-	for (int p = 0; p < initial.PieceVec.size(); p++)
-	{
-		const auto& faceVec = initial.PieceExtractedConvex[p];
-
-		VMACH::Polygon3D polygon3D = { true };
-		for (const auto& faceIndex : faceVec)
-		{
-			VMACH::PolygonFace f = { true };
-			for (int j = 0; j < faceIndex.size(); j++)
-				f.AddVertex(initial.PieceVec[p].Convex[faceIndex[j]].Position);
-
-			polygon3D.AddFace(f);
-		}
-
-		m_convexVec.push_back(polygon3D);
+		boxPoly.Render(fracturedVertexData, fracturedIndexData, Vector3(1, 0, 0));
 	}
 
 	TIMER_INIT;
 	TIMER_START_NAME(L"ApplyFracture\t\t");
 
 	// 11. Apply fracture pattern.
-	CompoundInfo second = ApplyFracture(initial, fractureVoroPolyVec, m_fractureArgs.PartialFracture);
+	CompoundInfo second = ApplyFracture(m_fractureStorage.InitialCompound, 
+										localFracturePattern, 
+										localSpherePointCloud, 
+										m_fractureArgs.PartialFracture);
 	SetExtract(second);
 
 	TIMER_STOP_PRINT;
 	TIMER_START_NAME(L"MergeOutOfImpact\t\t");
 
 	if (TRUE == m_fractureArgs.PartialFracture)
-		MergeOutOfImpact(second);
+		MergeOutOfImpact(second, localSpherePointCloud);
 
 	TIMER_STOP_PRINT;
 	TIMER_START_NAME(L"HandleConvexIsland\t\t");
@@ -1635,7 +1619,7 @@ void Surtr::DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVert
 		for (const int i : second.CompoundBind[l])
 		{
 			//Poly::RenderPolyhedron(achVertexData, achIndexData, second.PieceVec[i].Convex, false, color);
-			Poly::RenderPolyhedron(achVertexData, achIndexData, second.PieceVec[i].Mesh, false, color);
+			Poly::RenderPolyhedron(fracturedVertexData, fracturedIndexData, second.PieceVec[i].Mesh, false, color);
 		}
 	}
 }
@@ -1777,7 +1761,10 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cell
 	return GenerateVoronoi(cellPointVec);
 }
 
-Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const CompoundInfo& preResult, _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, _In_ bool partial)
+Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const CompoundInfo& preResult, 
+										 _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
+										 _In_ const std::vector<Vector3>& spherePointCloud, 
+										 _In_ bool partial)
 {
 	std::vector<Piece> decompose;
 	std::vector<std::set<int>> bind;
@@ -1792,7 +1779,7 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const CompoundInfo& preResult, _In
 	{
 		for (int c = 0; c < targetPieceVec.size(); c++)
 		{
-			if (TRUE == ConvexOutOfSphere(targetPieceVec[c].Convex, extract[c], m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
+			if (TRUE == ConvexOutOfSphere(targetPieceVec[c].Convex, extract[c], spherePointCloud, m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
 			{
 				outside.insert(c);
 
@@ -2076,7 +2063,7 @@ void Surtr::HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo)
 	compoundInfo.CompoundBind.insert(compoundInfo.CompoundBind.end(), newBind.begin(), newBind.end());
 }
 
-void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo)
+void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud)
 {
 	std::set<int> emptyCompound;
 
@@ -2088,7 +2075,7 @@ void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo)
 		std::set<int> outside;
 		for (const int c : local)
 		{
-			if (TRUE == ConvexOutOfSphere(compoundInfo.PieceVec[c].Convex, compoundInfo.PieceExtractedConvex[c], m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
+			if (TRUE == ConvexOutOfSphere(compoundInfo.PieceVec[c].Convex, compoundInfo.PieceExtractedConvex[c], spherePointCloud, m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
 				outside.insert(c);
 		}
 
@@ -2138,6 +2125,7 @@ void Surtr::Refitting(_Inout_ std::vector<Piece>& targetPieceVec)
 
 bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 							  _In_ const std::vector<std::vector<int>>& extract,
+							  _In_ const std::vector<Vector3>& spherePointCloud,
 							  _In_ const Vector3 origin,
 							  _In_ const float radius)
 {
@@ -2155,13 +2143,18 @@ bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 	if (FALSE == noVertexInsideSphere)
 		return false;
 
-	for (const auto& po : m_spherePointCloud)
+	for (const auto& po : spherePointCloud)
 	{
 		bool contain = true;
 		for (const auto& f : extract)
 		{
-			Plane p(polyhedron[f[0]].Position, polyhedron[f[1]].Position, polyhedron[f[2]].Position);
-			if (VMACH::CalcDistanceToPoint(po, p) > 0)
+			Vector3 normal = (polyhedron[f[1]].Position - polyhedron[f[0]].Position).Cross(polyhedron[f[2]].Position - polyhedron[f[0]].Position);
+			normal.Normalize();
+
+			float d = -polyhedron[f[0]].Position.Dot(normal);
+
+			float dist = normal.Dot(po) + d;
+			if (dist > 0)
 			{
 				contain = false;
 				break;
@@ -2313,22 +2306,15 @@ void Surtr::LoadModelData(_In_ const std::string fileName,
 	}
 }
 
-Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
+StaticMesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
-	Mesh* mesh = new Mesh();
-
-	mesh->VertexData = vertices;
-	mesh->IndexData = indices;
-	mesh->VertexCount = vertices.size();
-	mesh->IndexCount = indices.size();
-	mesh->VBSize = sizeof(VertexNormalColor) * mesh->VertexCount;
-	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
+	StaticMesh* staticMesh = new StaticMesh(vertices, indices);
 
 	// Prepare vertex buffer.
 	{
 		// Create default heap.
 		CD3DX12_HEAP_PROPERTIES defaultHeapProp(D3D12_HEAP_TYPE_DEFAULT);
-		auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->VBSize);
+		auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(staticMesh->VBSize);
 		DX::ThrowIfFailed(
 			m_d3dDevice->CreateCommittedResource(
 				&defaultHeapProp,
@@ -2336,16 +2322,16 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vert
 				&resDesc,
 				D3D12_RESOURCE_STATE_COPY_DEST,
 				nullptr,
-				IID_PPV_ARGS(mesh->VB.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(staticMesh->VB.ReleaseAndGetAddressOf())));
 
 		// Initialize vertex buffer view.
-		mesh->VBV.BufferLocation = mesh->VB->GetGPUVirtualAddress();
-		mesh->VBV.StrideInBytes = sizeof(VertexNormalColor);
-		mesh->VBV.SizeInBytes = mesh->VBSize;
+		staticMesh->VBV.BufferLocation = staticMesh->VB->GetGPUVirtualAddress();
+		staticMesh->VBV.StrideInBytes = sizeof(VertexNormalColor);
+		staticMesh->VBV.SizeInBytes = staticMesh->VBSize;
 
 		// Create upload heap.
 		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
-		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->VBSize);
+		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(staticMesh->VBSize);
 		DX::ThrowIfFailed(
 			m_d3dDevice->CreateCommittedResource(
 				&uploadHeapProp,
@@ -2353,20 +2339,20 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vert
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(mesh->VertexUploadHeap.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(staticMesh->VertexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
 		subResourceData.pData = vertices.data();
-		subResourceData.RowPitch = mesh->VBSize;
-		subResourceData.SlicePitch = mesh->VBSize;
+		subResourceData.RowPitch = staticMesh->VBSize;
+		subResourceData.SlicePitch = staticMesh->VBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), mesh->VertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), staticMesh->VB.Get(), staticMesh->VertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-			mesh->VB.Get(),
+			staticMesh->VB.Get(),
 			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
 		m_commandList->ResourceBarrier(1, &barrier);
 	}
@@ -2375,7 +2361,7 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vert
 	{
 		// Create default heap.
 		CD3DX12_HEAP_PROPERTIES defaultHeapProp(D3D12_HEAP_TYPE_DEFAULT);
-		auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->IBSize);
+		auto resDesc = CD3DX12_RESOURCE_DESC::Buffer(staticMesh->IBSize);
 		DX::ThrowIfFailed(
 			m_d3dDevice->CreateCommittedResource(
 				&defaultHeapProp,
@@ -2383,16 +2369,16 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vert
 				&resDesc,
 				D3D12_RESOURCE_STATE_COPY_DEST,
 				nullptr,
-				IID_PPV_ARGS(mesh->IB.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(staticMesh->IB.ReleaseAndGetAddressOf())));
 
 		// Initialize index buffer view.
-		mesh->IBV.BufferLocation = mesh->IB->GetGPUVirtualAddress();
-		mesh->IBV.Format = DXGI_FORMAT_R32_UINT;
-		mesh->IBV.SizeInBytes = mesh->IBSize;
+		staticMesh->IBV.BufferLocation = staticMesh->IB->GetGPUVirtualAddress();
+		staticMesh->IBV.Format = DXGI_FORMAT_R32_UINT;
+		staticMesh->IBV.SizeInBytes = staticMesh->IBSize;
 
 		// Create upload heap.
 		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
-		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->IBSize);
+		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(staticMesh->IBSize);
 		DX::ThrowIfFailed(
 			m_d3dDevice->CreateCommittedResource(
 				&uploadHeapProp,
@@ -2400,93 +2386,62 @@ Mesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vert
 				&uploadHeapDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(mesh->IndexUploadHeap.ReleaseAndGetAddressOf())));
+				IID_PPV_ARGS(staticMesh->IndexUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Define sub-resource data.
 		D3D12_SUBRESOURCE_DATA subResourceData = {};
 		subResourceData.pData = indices.data();
-		subResourceData.RowPitch = mesh->IBSize;
-		subResourceData.SlicePitch = mesh->IBSize;
+		subResourceData.RowPitch = staticMesh->IBSize;
+		subResourceData.SlicePitch = staticMesh->IBSize;
 
 		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), mesh->IndexUploadHeap.Get(), 0, 0, 1, &subResourceData);
+		UpdateSubresources(m_commandList.Get(), staticMesh->IB.Get(), staticMesh->IndexUploadHeap.Get(), 0, 0, 1, &subResourceData);
 
 		// Translate vertex buffer state.
 		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-			mesh->IB.Get(),
+			staticMesh->IB.Get(),
 			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
 		m_commandList->ResourceBarrier(1, &barrier);
 	}
 
-	return mesh;
+	return staticMesh;
 }
 
-void Surtr::UpdateMeshData(_Inout_ Mesh* mesh, _In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
+DynamicMesh* Surtr::PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
 {
-	mesh->VertexCount = vertices.size();
-	mesh->IndexCount = indices.size();
-	mesh->VBSize = sizeof(VertexNormalColor) * mesh->VertexCount;
-	mesh->IBSize = sizeof(uint32_t) * mesh->IndexCount;
+	DynamicMesh* dynamicMesh = new DynamicMesh(vertices, indices, 2u);
 
+	// Prepare vertex buffer.
+	dynamicMesh->AllocateVB(m_d3dDevice.Get());
+	dynamicMesh->UploadVB();
+
+	// Prepare index buffer.
+	dynamicMesh->AllocateIB(m_d3dDevice.Get());
+	dynamicMesh->UploadIB();
+
+	return dynamicMesh;
+}
+
+void Surtr::UpdateDynamicMesh(_Inout_ DynamicMesh* dynamicMesh, _In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
+{
+	dynamicMesh->UpdateMeshData(vertices, indices);
+
+	if (dynamicMesh->RenderVBSize > dynamicMesh->AllocatedVBSize)
 	{
-		mesh->VertexUploadHeap.Reset();
+		dynamicMesh->AllocatedVBSize = dynamicMesh->RenderVBSize;
 
-		// Create upload heap.
-		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
-		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->VBSize);
-		DX::ThrowIfFailed(
-			m_d3dDevice->CreateCommittedResource(
-				&uploadHeapProp,
-				D3D12_HEAP_FLAG_NONE,
-				&uploadHeapDesc,
-				D3D12_RESOURCE_STATE_GENERIC_READ,
-				nullptr,
-				IID_PPV_ARGS(mesh->VertexUploadHeap.ReleaseAndGetAddressOf())));
-
-		// Define sub-resource data.
-		D3D12_SUBRESOURCE_DATA subResourceData = {};
-		subResourceData.pData = vertices.data();
-		subResourceData.RowPitch = mesh->VBSize;
-		subResourceData.SlicePitch = mesh->VBSize;
-
-		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->VB.Get(), mesh->VertexUploadHeap.Get(), 0, 0, 1, &subResourceData);
-
-		// Translate vertex buffer state.
-		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-			mesh->VB.Get(),
-			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
-		m_commandList->ResourceBarrier(1, &barrier);
+		// Re-Allocation.
+		dynamicMesh->AllocateVB(m_d3dDevice.Get());
 	}
 
+	if (dynamicMesh->RenderIBSize > dynamicMesh->AllocatedIBSize)
 	{
-		mesh->IndexUploadHeap.Reset();
+		dynamicMesh->AllocatedIBSize = dynamicMesh->RenderIBSize;
 
-		// Create upload heap.
-		CD3DX12_HEAP_PROPERTIES uploadHeapProp(D3D12_HEAP_TYPE_UPLOAD);
-		auto uploadHeapDesc = CD3DX12_RESOURCE_DESC::Buffer(mesh->IBSize);
-		DX::ThrowIfFailed(
-			m_d3dDevice->CreateCommittedResource(
-				&uploadHeapProp,
-				D3D12_HEAP_FLAG_NONE,
-				&uploadHeapDesc,
-				D3D12_RESOURCE_STATE_GENERIC_READ,
-				nullptr,
-				IID_PPV_ARGS(mesh->IndexUploadHeap.ReleaseAndGetAddressOf())));
-
-		// Define sub-resource data.
-		D3D12_SUBRESOURCE_DATA subResourceData = {};
-		subResourceData.pData = indices.data();
-		subResourceData.RowPitch = mesh->IBSize;
-		subResourceData.SlicePitch = mesh->IBSize;
-
-		// Copy the vertex data to the default heap.
-		UpdateSubresources(m_commandList.Get(), mesh->IB.Get(), mesh->IndexUploadHeap.Get(), 0, 0, 1, &subResourceData);
-
-		// Translate vertex buffer state.
-		const D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::Transition(
-			mesh->IB.Get(),
-			D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_INDEX_BUFFER);
-		m_commandList->ResourceBarrier(1, &barrier);
+		// Re-Allocation.
+		dynamicMesh->AllocateIB(m_d3dDevice.Get());
 	}
+
+	dynamicMesh->UploadVB();
+	dynamicMesh->UploadIB();
 }

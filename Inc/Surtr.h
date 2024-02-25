@@ -97,6 +97,16 @@ private:
 		std::vector<std::set<int>>					CompoundBind;
 	};
 
+	struct FractureStorage
+	{
+		CompoundInfo					InitialCompound;
+		std::vector<VMACH::Polygon3D>	FracturePattern;
+		Vector3							BBCenter;
+		Vector3							MinBB;
+		Vector3							MaxBB;
+		float							MaxAxisScale;
+	};
+
 	void Update(DX::StepTimer const& timer);
 	void UpdateMesh();
 	void Render();
@@ -113,10 +123,11 @@ private:
 	void OnDeviceLost();
 
 	// Core feature functions
-	void							DoFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
-											   _In_ const std::vector<uint32_t>& visualMeshIndices,
-											   _Out_ std::vector<VertexNormalColor>& achVertexData,
-											   _Out_ std::vector<uint32_t>& achIndexData);
+	void							PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
+													_In_ const std::vector<uint32_t>& visualMeshIndices);
+	
+	void							DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData,
+											   _Out_ std::vector<uint32_t>& fracturedIndexData);
 
 	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit);
 	std::vector<Vector3>			GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit);
@@ -127,6 +138,7 @@ private:
 
 	CompoundInfo					ApplyFracture(_In_ const CompoundInfo& preResult, 
 												  _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
+												  _In_ const std::vector<Vector3>& spherePointCloud, 
 												  _In_ bool partial = false);
 
 	void							SetExtract(_Inout_ CompoundInfo& preResult);
@@ -135,12 +147,13 @@ private:
 	std::vector<std::set<int>>		CheckMeshIsland(_In_ const Poly::Polyhedron& polyhedron);
 
 	void							HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo);
-	void							MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo);
+	void							MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud);
 	void							Refitting(_Inout_ std::vector<Piece>& targetPieceVec);
 
 	// Utility
 	bool							ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 													  _In_ const std::vector<std::vector<int>>& extract,
+													  _In_ const std::vector<Vector3>& spherePointCloud,
 													  _In_ const Vector3 origin,
 													  _In_ const float radius);
 
@@ -160,12 +173,15 @@ private:
 												  _Out_ std::vector<VertexNormalColor>& vertices,
 												  _Out_ std::vector<uint32_t>& indices);
 
-	Mesh*							PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, 
+	StaticMesh*						PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, 
 														_In_ const std::vector<uint32_t>& indices);
 
-	void							UpdateMeshData(_Inout_ Mesh* mesh,
-												   _In_ const std::vector<VertexNormalColor>& vertices,
-												   _In_ const std::vector<uint32_t>& indices);
+	DynamicMesh*					PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices,
+															   _In_ const std::vector<uint32_t>& indices);
+
+	void							UpdateDynamicMesh(_Inout_ DynamicMesh* dynamicMesh,
+													  _In_ const std::vector<VertexNormalColor>& vertices,
+													  _In_ const std::vector<uint32_t>& indices);
 
 	// Constants
 	static constexpr XMVECTORF32               GRAY = { 0.15f, 0.15f, 0.15f, 1.0f };
@@ -255,15 +271,13 @@ private:
 
 	// Meshes
 	UINT                                                m_modelIndex;
-	std::vector<Mesh*>                                  m_meshVec;
-	std::vector<VMACH::Polygon3D>                       m_convexVec;
-
+	std::vector<MeshBase*>								m_meshVec;
 	std::vector<Vector3>								m_spherePointCloud;
 
 	// Shadow
 	std::unique_ptr<ShadowMap>  			            m_shadowMap;
 	UINT												m_shadowMapSize;
-	BoundingSphere                             m_sceneBounds;
+	BoundingSphere										m_sceneBounds;
 
 	// Game state
 	DX::StepTimer                                       m_timer;
@@ -276,6 +290,8 @@ private:
 	bool                                                m_executeNextStep;
 	FractureArgs										m_fractureArgs;
 	FractureResult										m_fractureResult;
+	FractureStorage										m_fractureStorage;
+	std::vector<VMACH::Polygon3D>                       m_convexVec;
 
 	// WVP matrices
 	XMMATRIX											m_worldMatrix;
