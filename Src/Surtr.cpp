@@ -360,13 +360,14 @@ void Surtr::Render()
 	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
-	// Set descriptor heaps.
-	m_commandList->SetDescriptorHeaps(1, m_srvDescriptorHeap.GetAddressOf());
-
 	// Set root signature & descriptor table.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
-	m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
+
+	m_commandList->SetDescriptorHeaps(1, m_srvDescriptorHeapSB.GetAddressOf());
 	m_commandList->SetGraphicsRootDescriptorTable(4, m_srvDescriptorHeapSB->GetGPUDescriptorHandleForHeapStart());
+
+	m_commandList->SetDescriptorHeaps(1, m_srvDescriptorHeap.GetAddressOf());
+	m_commandList->SetGraphicsRootDescriptorTable(0, m_srvDescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 
 	// PASS 1 - Shadow Map
 	if (m_renderShadow)

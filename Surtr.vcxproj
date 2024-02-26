@@ -50,7 +50,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)Inc;$(SolutionDir)ThirdParty\Inc;$(SolutionDir)ThirdParty\Inc\imgui;$(SolutionDir)ThirdParty\voro\src;$(SolutionDir)ThirdParty\assimp\include;$(SolutionDir)ThirdParty\assimp\include\assimp;$(SolutionDir)ThirdParty\assimp\build\include;C:\vcpkg\installed\x64-windows\include\physx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)Inc;$(SolutionDir)ThirdParty\Inc;$(SolutionDir)ThirdParty\Inc\imgui;$(SolutionDir)ThirdParty\voro\src;$(SolutionDir)ThirdParty\assimp\include;$(SolutionDir)ThirdParty\assimp\include\assimp;$(SolutionDir)ThirdParty\assimp\build\include;C:\vcpkg\installed\x64-windows\include\physx;E:\vcpkg\installed\x64-windows\include\physx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level4</WarningLevel>
@@ -78,7 +78,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)Inc;$(SolutionDir)ThirdParty\Inc;$(SolutionDir)ThirdParty\Inc\imgui;$(SolutionDir)ThirdParty\voro\src;$(SolutionDir)ThirdParty\assimp\include;$(SolutionDir)ThirdParty\assimp\include\assimp;$(SolutionDir)ThirdParty\assimp\build\include;C:\vcpkg\installed\x64-windows\include\physx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir);$(SolutionDir)Inc;$(SolutionDir)ThirdParty\Inc;$(SolutionDir)ThirdParty\Inc\imgui;$(SolutionDir)ThirdParty\voro\src;$(SolutionDir)ThirdParty\assimp\include;$(SolutionDir)ThirdParty\assimp\include\assimp;$(SolutionDir)ThirdParty\assimp\build\include;C:\vcpkg\installed\x64-windows\include\physx;E:\vcpkg\installed\x64-windows\include\physx;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
       <WarningLevel>Level4</WarningLevel>
