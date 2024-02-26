@@ -292,12 +292,12 @@ void Surtr::Update(DX::StepTimer const& timer)
 	PxShape* shapes[MAX_NUM_ACTOR_SHAPES];
 	for (int i = 0; i < m_rigidVec.size(); i++)
 	{
-		if (m_rigidVec[i] == nullptr)
+		if (m_rigidVec[i].first == nullptr)
 			continue;
 
-		m_rigidVec[i]->getShapes(shapes, 1);
+		m_rigidVec[i].first->getShapes(shapes, 1);
 
-		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *m_rigidVec[i]));
+		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *m_rigidVec[i].first));
 		const PxGeometry& geom = shapes[0]->getGeometry();
 
 		XMMATRIX mat = {};
@@ -306,7 +306,8 @@ void Surtr::Update(DX::StepTimer const& timer)
 		else
 			mat = PxMatToXMMATRIX(shapePose);
 		
-		m_meshMatrixVec[i].WorldMatrix = XMMatrixTranspose(mat);
+		for (const int meshIndex : m_rigidVec[i].second)
+			m_meshMatrixVec[meshIndex].WorldMatrix = XMMatrixTranspose(mat);
 	}
 }
 
@@ -551,9 +552,12 @@ void Surtr::Render()
 						TIMER_INIT;
 						TIMER_START;
 						
-						for (int i = 0; i < m_fractureStorage.InitialCompound.PieceVec.size(); i++)
-							AddPiece(m_fractureStorage.InitialCompound.PieceVec[i], m_fractureStorage.InitialCompound.PieceExtractedConvex[i], false);
+						/*for (int i = 0; i < m_fractureStorage.InitialCompound.PieceVec.size(); i++)
+							AddPiece(m_fractureStorage.InitialCompound.PieceVec[i], m_fractureStorage.InitialCompound.PieceExtractedConvex[i], false);*/
 						
+						for (int i = 0; i < m_fractureResult.RecentCompound.PieceVec.size(); i++)
+							CookingConvex(m_fractureResult.RecentCompound.PieceVec[i], m_fractureResult.RecentCompound.PieceExtractedConvex[i], false);
+
 						TIMER_STOP_PRINT;
 					}
 
@@ -1773,6 +1777,8 @@ void Surtr::DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData
 
 	TIMER_STOP_PRINT;
 
+	m_fractureResult.RecentCompound = second;
+
 	// Render Loop
 	for (int l = 0; l < second.CompoundBind.size(); l++)
 	{
@@ -2374,7 +2380,31 @@ bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ cons
 	return hit;
 }
 
-void Surtr::AddPiece(const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex)
+void Surtr::InitCompound(const CompoundInfo& compoundInfo)
+{
+	for (const auto& compound : m_fractureResult.RecentCompound.CompoundBind)
+	{
+		PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(PxVec3(0, 0, 0)));
+
+		for (const int iPiece : compound)
+		{
+			PxConvexMeshGeometry convexGeometry = CookingConvex(m_fractureResult.RecentCompound.PieceVec[iPiece], m_fractureResult.RecentCompound.PieceExtractedConvex[iPiece]);
+			PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, convexGeometry, *gMaterial);
+		}
+
+		PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
+		gScene->addActor(*compoundRigidBody);
+	}
+
+	std::vector<VertexNormalColor> vertexData;
+	std::vector<uint32_t> indexData;
+
+	Poly::RenderPolyhedron(vertexData, indexData, renderConvex ? piece.Convex : piece.Mesh, renderConvex ? extract : Poly::ExtractFaces(piece.Mesh), true);
+	DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
+	AddMesh(mesh, convexRigidBody);
+}
+
+PxConvexMeshGeometry Surtr::CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract)
 {
 	std::vector<PxVec3> convexVertexData(piece.Convex.size());
 	std::transform(piece.Convex.begin(),
@@ -2386,10 +2416,11 @@ void Surtr::AddPiece(const Piece& piece, const std::vector<std::vector<int>>& ex
 	convexDesc.points.count = convexVertexData.size();
 	convexDesc.points.stride = sizeof(PxVec3);
 	convexDesc.points.data = convexVertexData.data();
-	convexDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX | PxConvexFlag::eDISABLE_MESH_VALIDATION | PxConvexFlag::eFAST_INERTIA_COMPUTATION;
+	convexDesc.flags = PxConvexFlag::eCOMPUTE_CONVEX | PxConvexFlag::eDISABLE_MESH_VALIDATION | PxConvexFlag::ePLANE_SHIFTING;
 
 	PxTolerancesScale scale;
 	PxCookingParams params(scale);
+	params.planeTolerance = 0.000007f;
 
 #ifdef _DEBUG
 	bool res = PxValidateConvexMesh(params, convexDesc);
@@ -2397,23 +2428,11 @@ void Surtr::AddPiece(const Piece& piece, const std::vector<std::vector<int>>& ex
 #endif
 
 	PxConvexMesh* convexMesh = PxCreateConvexMesh(params, convexDesc, gPhysics->getPhysicsInsertionCallback());
-
-	PxTransform tm(PxVec3(0, 0, 0));
-	PxRigidDynamic* convexRigidBody = gPhysics->createRigidDynamic(tm);
-	PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*convexRigidBody, PxConvexMeshGeometry(convexMesh), *gMaterial);
-
-	PxRigidBodyExt::updateMassAndInertia(*convexRigidBody, 10.0f);
-	gScene->addActor(*convexRigidBody);
-
-	std::vector<VertexNormalColor> vertexData;
-	std::vector<uint32_t> indexData;
-
-	Poly::RenderPolyhedron(vertexData, indexData, renderConvex ? piece.Convex : piece.Mesh, renderConvex ? extract : Poly::ExtractFaces(piece.Mesh), true);
-	DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
-	AddMesh(mesh, convexRigidBody);
+	
+	return PxConvexMeshGeometry(convexMesh, PxMeshScale(), PxConvexMeshGeometryFlag::eTIGHT_BOUNDS);
 }
 
-void Surtr::AddPieceManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract)
+PxConvexMeshGeometry Surtr::CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract)
 {
 	// #TODO : Currently not working.
 	std::vector<PxVec3> convexVertexData(polyhedron.size());
@@ -2471,28 +2490,29 @@ void Surtr::AddPieceManual(const Poly::Polyhedron& polyhedron, const std::vector
 	PxDefaultMemoryInputData input(buf.getData(), buf.getSize());
 	PxConvexMesh* convexMesh = gPhysics->createConvexMesh(input);
 
-	PxTransform tm(PxVec3(0, 0, 0));
-	PxRigidDynamic* convexRigidBody = gPhysics->createRigidDynamic(tm);
-	PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*convexRigidBody, PxConvexMeshGeometry(convexMesh), *gMaterial);
-
-	PxRigidBodyExt::updateMassAndInertia(*convexRigidBody, 10.0f);
-	gScene->addActor(*convexRigidBody);
-
-	std::vector<VertexNormalColor> vertexData;
-	std::vector<uint32_t> indexData;
-	Poly::RenderPolyhedron(vertexData, indexData, polyhedron, extract, true);
-	StaticMesh* polyhedronModel = PrepareMeshResource(vertexData, indexData);
-
-	AddMesh(polyhedronModel, convexRigidBody);
+	return PxConvexMeshGeometry(convexMesh, PxMeshScale(), PxConvexMeshGeometryFlag::eTIGHT_BOUNDS);
 }
 
 void Surtr::AddMesh(MeshBase* mesh, physx::PxRigidActor* rigidBody)
 {
+	int meshIndex = m_meshVec.size();
 	m_meshVec.push_back(mesh);
-	m_rigidVec.push_back(rigidBody);
 	m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
 
+	m_rigidVec.emplace_back(rigidBody, std::vector<int> { (int)meshIndex });
+
 	// #TODO : Re-Allocate If exceed limit.
+}
+
+void Surtr::AddMesh(MeshBase* mesh, int rigidBodyIndex)
+{
+	int meshIndex = m_meshVec.size();
+	m_meshVec.push_back(mesh);
+	m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+
+	m_rigidVec[rigidBodyIndex].second.push_back(meshIndex);
+
+	// #TODO : Re-Allocate If exceed limit.s
 }
 
 void Surtr::CreateTextureResource(

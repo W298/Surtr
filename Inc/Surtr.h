@@ -84,12 +84,6 @@ private:
 		INT			FracturePatternCellCnt = 64;
 	};
 
-	struct FractureResult
-	{
-		UINT                ICHFaceCnt = 0;
-		UINT                ACHErrorPointCnt = 0;
-	};
-
 	struct Piece
 	{
 		Poly::Polyhedron	Convex;
@@ -101,6 +95,13 @@ private:
 		std::vector<Piece>							PieceVec;
 		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
 		std::vector<std::set<int>>					CompoundBind;
+	};
+
+	struct FractureResult
+	{
+		UINT                ICHFaceCnt = 0;
+		UINT                ACHErrorPointCnt = 0;
+		CompoundInfo		RecentCompound;
 	};
 
 	struct FractureStorage
@@ -168,11 +169,13 @@ private:
 														  _In_ const Ray ray, 
 														  _Out_ float& dist);
 
-	void							AddPiece(const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex);
-	void							AddPieceManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
+	void							InitCompound(const CompoundInfo& compoundInfo);
+	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
+	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
 	// Helper functions
 	void							AddMesh(MeshBase* mesh, physx::PxRigidActor* rigidBody);
+	void							AddMesh(MeshBase* mesh, int rigidBodyIndex);
 	
 	void							CreateTextureResource(_In_ const wchar_t* fileName,
 														  _Out_ ID3D12Resource** texture,
@@ -221,7 +224,7 @@ private:
 	static constexpr UINT                               c_swapBufferCount		= 3;
 	
 	// #TODO : Currently set count as constant.
-	static constexpr UINT								c_nSBCnt				= 100;
+	static constexpr UINT								c_nSBCnt				= 200;
 
 	// Back buffer index
 	UINT                                                m_backBufferIndex;
@@ -290,10 +293,11 @@ private:
 
 	// Meshes
 	UINT                                                m_modelIndex;
-	std::vector<MeshBase*>								m_meshVec;
-	std::vector<physx::PxRigidActor*>					m_rigidVec;
-	std::vector<MeshSB>									m_meshMatrixVec;
 	std::vector<Vector3>								m_spherePointCloud;
+
+	std::vector<MeshBase*>												m_meshVec;
+	std::vector<MeshSB>													m_meshMatrixVec;
+	std::vector<std::pair<physx::PxRigidActor*, std::vector<int>>>		m_rigidVec;
 
 	// Shadow
 	std::unique_ptr<ShadowMap>  			            m_shadowMap;

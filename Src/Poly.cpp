@@ -609,12 +609,20 @@ Poly::Polyhedron Poly::GetBB()
 	return poly;
 }
 
-void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Polyhedron& poly, const std::vector<std::vector<int>>& extract, bool isConvex, Vector3 color)
+void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
+							std::vector<uint32_t>& indexData, 
+							const Polyhedron& poly, 
+							const std::vector<std::vector<int>>& extract, 
+							bool isConvex, 
+							Vector3 color)
 {
 	const size_t vertexOffset = vertexData.size();
 
 	vertexData.resize(vertexOffset + poly.size());
-	std::transform(poly.begin(), poly.end(), std::next(vertexData.begin(), vertexOffset), [&color](const Poly::Vertex& vert) { return VertexNormalColor(vert.Position, DirectX::XMFLOAT3(), color); });
+	std::transform(poly.begin(), 
+				   poly.end(), 
+				   std::next(vertexData.begin(), vertexOffset), 
+				   [&color](const Poly::Vertex& vert) { return VertexNormalColor(vert.Position, DirectX::XMFLOAT3(), color); });
 
 	if (TRUE == isConvex)
 	{
