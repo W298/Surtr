@@ -2,7 +2,6 @@
 #include "Surtr.h"
 
 #include "voro++.hh"
-#include <PxPhysicsAPI.h>
 
 #define PVD_HOST "127.0.0.1"
 #define MAX_NUM_ACTOR_SHAPES 128
@@ -48,6 +47,14 @@ Surtr::~Surtr()
 		DX::ThrowIfFailed(m_swapChain->SetFullscreenState(FALSE, NULL));
 }
 
+static XMMATRIX PxMatToXMMATRIX(PxMat44 mat)
+{
+	return XMMatrixSet(mat.column0.x, mat.column0.y, mat.column0.z, mat.column0.w,
+					   mat.column1.x, mat.column1.y, mat.column1.z, mat.column1.w,
+					   mat.column2.x, mat.column2.y, mat.column2.z, mat.column2.w,
+					   mat.column3.x, mat.column3.y, mat.column3.z, mat.column3.w);
+}
+
 // Initialize the Direct3D resources required to run.
 void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT modelIndex, UINT shadowMapSize, BOOL fullScreenMode)
 {
@@ -81,7 +88,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT mode
 	m_camMoveSpeed = 5.0f;
 	m_camRotateSpeed = 0.5f;
 
-	m_worldMatrix = XMMatrixIdentity();
 	m_viewMatrix = XMMatrixLookAtLH(m_camPosition, m_camLookTarget, DEFAULT_UP_VECTOR);
 
 	m_lightDirection = XMVectorSet(1.0f, -0.2f, 0.0f, 1.0f);
@@ -209,10 +215,12 @@ static void renderGeometry(const PxGeometry& geom)
 	}
 }
 
+static XMMATRIX tempMat;
+
 void renderActors(PxRigidActor** actors, const PxU32 numActors)
 {
 	PxShape* shapes[MAX_NUM_ACTOR_SHAPES];
-	for (PxU32 i = 0; i < numActors; i++)
+	for (PxU32 i = 1; i < numActors; i++)
 	{
 		const PxU32 nbShapes = actors[i]->getNbShapes();
 		PX_ASSERT(nbShapes <= MAX_NUM_ACTOR_SHAPES);
@@ -221,10 +229,19 @@ void renderActors(PxRigidActor** actors, const PxU32 numActors)
 		for (PxU32 j = 0; j < nbShapes; j++)
 		{
 			const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[j], *actors[i]));
+			tempMat = XMMatrixSet(shapePose.column0.x, shapePose.column0.y, shapePose.column0.z, shapePose.column0.w,
+								  shapePose.column1.x, shapePose.column1.y, shapePose.column1.z, shapePose.column1.w,
+								  shapePose.column2.x, shapePose.column2.y, shapePose.column2.z, shapePose.column2.w,
+								  shapePose.column3.x, shapePose.column3.y, shapePose.column3.z, shapePose.column3.w);
+
+			tempMat = XMMatrixTranspose(tempMat);
+			
 			const PxGeometry& geom = shapes[j]->getGeometry();
 
 			renderGeometry(geom);
 		}
+
+		break;
 	}
 }
 
@@ -309,16 +326,29 @@ void Surtr::Update(DX::StepTimer const& timer)
 	gScene->simulate(elapsedTime);
 	gScene->fetchResults(true);
 
-	PxU32 nbActors = gScene->getNbActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC);
-	if (nbActors)
+	// Update world matrix.
+	PxShape* shapes[MAX_NUM_ACTOR_SHAPES];
+	for (int i = 0; i < m_rigidVec.size(); i++)
 	{
-		std::vector<PxRigidActor*> actors(nbActors);
-		gScene->getActors(PxActorTypeFlag::eRIGID_DYNAMIC | PxActorTypeFlag::eRIGID_STATIC, reinterpret_cast<PxActor**>(&actors[0]), nbActors);
-		renderActors(&actors[0], static_cast<PxU32>(actors.size()));
+		if (m_rigidVec[i] == nullptr)
+			continue;
+
+		m_rigidVec[i]->getShapes(shapes, 1);
+
+		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *m_rigidVec[i]));
+		const PxGeometry& geom = shapes[0]->getGeometry();
+
+		XMMATRIX mat = {};
+		if (geom.getType() == PxGeometryType::ePLANE)
+			mat = XMMatrixTranslation(shapePose.column3.x, shapePose.column3.y, shapePose.column3.z);
+		else
+			mat = PxMatToXMMATRIX(shapePose);
+		
+		m_meshMatrixVec[i].WorldMatrix = XMMatrixTranspose(mat);
 	}
 }
 
-void Surtr::UpdateMesh()
+void Surtr::UploadMesh()
 {
 	if (m_executeNextStep)
 	{
@@ -342,6 +372,16 @@ void Surtr::UpdateMesh()
 	WaitForGpu();
 }
 
+void Surtr::UploadStructuredBuffer()
+{
+	CD3DX12_RANGE readRange(0, 0);
+	UINT8* bufferBegin = nullptr;
+
+	DX::ThrowIfFailed(m_sbUploadHeap->Map(0, &readRange, reinterpret_cast<void**>(&bufferBegin)));
+	memcpy(bufferBegin, m_meshMatrixVec.data(), sizeof(MeshSB) * m_meshMatrixVec.size());
+	m_sbUploadHeap->Unmap(0, nullptr);
+}
+
 // Draws the scene.
 void Surtr::Render()
 {
@@ -353,12 +393,14 @@ void Surtr::Render()
 
 	WaitForGpu();
 
-	// Update mesh data if needed.
-	UpdateMesh();
+	// Upload mesh data if needed.
+	UploadMesh();
 
 	// ----------> Prepare command list.
 	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
+
+	UploadStructuredBuffer();
 
 	// Set root signature & descriptor table.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
@@ -1163,13 +1205,6 @@ void Surtr::CreateDeviceDependentResources()
 			pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
 		}
 		gMaterial = gPhysics->createMaterial(0.5f, 0.5f, 0.6f);
-
-		PxRigidStatic* groundPlane = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 0), *gMaterial);
-		gScene->addActor(*groundPlane);
-
-		// Generate test actors.
-		for (PxU32 i = 0; i < 5; i++)
-			createStack(PxTransform(PxVec3(0, 0, stackZ -= 10.0f)), 10, 2.0f);
 	}
 }
 
@@ -1352,27 +1387,7 @@ void Surtr::CreateCommandListDependentResources()
 				&resDesc,
 				D3D12_RESOURCE_STATE_GENERIC_READ,
 				nullptr,
-				IID_PPV_ARGS(m_structuredBuffer.ReleaseAndGetAddressOf())));
-
-		// Upload structured data.
-		//#TODO : Currently update data manually.
-		CD3DX12_RANGE readRange(0, 0);
-		UINT8* bufferBegin = nullptr;
-
-		std::vector<MeshSB> sbData(c_nSBCnt, MeshSB(IDENTITY_MATRIX));
-
-		XMFLOAT4X4 mat = {};
-		XMFLOAT4X4 mat2 = {};
-		
-		XMStoreFloat4x4(&mat, XMMatrixTranspose(XMMatrixTranslation(0, 10, 0)));
-		XMStoreFloat4x4(&mat2, XMMatrixTranspose(XMMatrixTranslation(10, 0, 0)));
-		
-		sbData[0].WorldMatrix = mat;
-		sbData[2].WorldMatrix = mat2;
-
-		DX::ThrowIfFailed(m_structuredBuffer->Map(0, &readRange, reinterpret_cast<void**>(&bufferBegin)));
-		memcpy(bufferBegin, sbData.data(), sizeof(MeshSB) * sbData.size());
-		m_structuredBuffer->Unmap(0, nullptr);
+				IID_PPV_ARGS(m_sbUploadHeap.ReleaseAndGetAddressOf())));
 
 		// Create SRV.
 		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -1383,7 +1398,7 @@ void Surtr::CreateCommandListDependentResources()
 		srvDesc.Buffer.StructureByteStride = sizeof(MeshSB);
 		srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-		m_d3dDevice->CreateShaderResourceView(m_structuredBuffer.Get(), &srvDesc, m_srvDescriptorHeapSB->GetCPUDescriptorHandleForHeapStart());
+		m_d3dDevice->CreateShaderResourceView(m_sbUploadHeap.Get(), &srvDesc, m_srvDescriptorHeapSB->GetCPUDescriptorHandleForHeapStart());
 	}
 
 	// Pre-declare upload heap.
@@ -1458,27 +1473,93 @@ void Surtr::CreateCommandListDependentResources()
 		std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
 	}
 
+	// Fracturing.
 	{
-		StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
-		objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
-		m_meshVec.push_back(objectModel);
+		{
+			StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
+			objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
 
-		std::vector<VertexNormalColor> groundVertexData;
-		std::vector<uint32_t> groundIndexData;
-		LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -5, 0), groundVertexData, groundIndexData);
+			m_meshVec.push_back(objectModel);
+			m_rigidVec.push_back(nullptr);
+			m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+		}
 
-		StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
-		m_meshVec.push_back(groundModel);
+		{
+			std::vector<VertexNormalColor> groundVertexData;
+			std::vector<uint32_t> groundIndexData;
+			LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, 0, 0), groundVertexData, groundIndexData);
 
-		std::vector<VertexNormalColor> fracturedVertexData;
-		std::vector<uint32_t> fracturedIndexData;
+			StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
+			
+			PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 0), *gMaterial);
+			gScene->addActor(*groundRigidBody);
 
-		PrepareFracture(objectVertexData, objectIndexData);
-		DoFracture(fracturedVertexData, fracturedIndexData);
+			m_meshVec.push_back(groundModel);
+			m_rigidVec.push_back(groundRigidBody);
+			m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+		}
 
-		DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
-		m_meshVec.push_back(fractureModel);
+		{
+			std::vector<VertexNormalColor> fracturedVertexData;
+			std::vector<uint32_t> fracturedIndexData;
+
+			PrepareFracture(objectVertexData, objectIndexData);
+			DoFracture(fracturedVertexData, fracturedIndexData);
+
+			DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
+			
+			m_meshVec.push_back(fractureModel);
+			m_rigidVec.push_back(nullptr);
+			m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+		}
+
+		{
+			std::vector<VertexNormalColor> cubeVertexData;
+			std::vector<uint32_t> cubeIndexData;
+			Poly::RenderPolyhedron(cubeVertexData, cubeIndexData, Poly::GetBB());
+
+			StaticMesh* cubeModel = PrepareMeshResource(cubeVertexData, cubeIndexData);
+
+			PxShape* shape = gPhysics->createShape(PxBoxGeometry(0.5f, 0.5f, 0.5f), *gMaterial);
+			
+			PxTransform localTm(PxVec3(0, 30, 0));
+			PxRigidDynamic* body = gPhysics->createRigidDynamic(localTm);
+			body->attachShape(*shape);
+			PxRigidBodyExt::updateMassAndInertia(*body, 10.0f);
+			gScene->addActor(*body);
+			
+			shape->release();
+
+			m_meshVec.push_back(cubeModel);
+			m_rigidVec.push_back(body);
+			m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+		}
+
+		{
+			std::vector<VertexNormalColor> cubeVertexData;
+			std::vector<uint32_t> cubeIndexData;
+			Poly::RenderPolyhedron(cubeVertexData, cubeIndexData, Poly::GetBB());
+
+			StaticMesh* cubeModel = PrepareMeshResource(cubeVertexData, cubeIndexData);
+
+			PxShape* shape = gPhysics->createShape(PxBoxGeometry(0.5f, 0.5f, 0.5f), *gMaterial);
+
+			PxTransform localTm(PxVec3(0, 30, 5));
+			PxRigidDynamic* body = gPhysics->createRigidDynamic(localTm);
+			body->attachShape(*shape);
+			PxRigidBodyExt::updateMassAndInertia(*body, 10.0f);
+			gScene->addActor(*body);
+
+			shape->release();
+
+			m_meshVec.push_back(cubeModel);
+			m_rigidVec.push_back(body);
+			m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
+		}
 	}
+
+	// Upload structured data.
+	UploadStructuredBuffer();
 
 	// <---------- Close command list.
 	DX::ThrowIfFailed(m_commandList->Close());
@@ -1618,7 +1699,7 @@ void Surtr::OnDeviceLost()
 	m_shadowMap.reset();
 
 	// SB
-	m_structuredBuffer.Reset();
+	m_sbUploadHeap.Reset();
 
 	// CB
 	m_cbOpaqueUploadHeap.Reset();

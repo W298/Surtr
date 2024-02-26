@@ -1,5 +1,7 @@
 #pragma once
 
+#include <PxPhysicsAPI.h>
+
 #include "ShadowMap.h"
 #include "Mesh.h"
 
@@ -48,7 +50,7 @@ private:
 
 	struct MeshSB
 	{
-		XMFLOAT4X4 WorldMatrix;
+		XMMATRIX	WorldMatrix;
 	};
 
 	struct OpaqueCB
@@ -112,7 +114,8 @@ private:
 	};
 
 	void Update(DX::StepTimer const& timer);
-	void UpdateMesh();
+	void UploadMesh();
+	void UploadStructuredBuffer();
 	void Render();
 
 	void CreateDeviceResources();
@@ -263,7 +266,7 @@ private:
 	D3D12_GPU_VIRTUAL_ADDRESS						    m_cbShadowGpuAddress;
 
 	// Structured Buffer
-	Microsoft::WRL::ComPtr<ID3D12Resource>              m_structuredBuffer;
+	Microsoft::WRL::ComPtr<ID3D12Resource>              m_sbUploadHeap;
 
 	// Resources
 	Microsoft::WRL::ComPtr<IDXGISwapChain3>             m_swapChain;
@@ -283,6 +286,8 @@ private:
 	// Meshes
 	UINT                                                m_modelIndex;
 	std::vector<MeshBase*>								m_meshVec;
+	std::vector<physx::PxRigidActor*>					m_rigidVec;
+	std::vector<MeshSB>									m_meshMatrixVec;
 	std::vector<Vector3>								m_spherePointCloud;
 
 	// Shadow
@@ -305,7 +310,6 @@ private:
 	std::vector<VMACH::Polygon3D>                       m_convexVec;
 
 	// WVP matrices
-	XMMATRIX											m_worldMatrix;
 	XMMATRIX											m_viewMatrix;
 	XMMATRIX											m_projectionMatrix;
 
