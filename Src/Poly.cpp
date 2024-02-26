@@ -609,30 +609,30 @@ Poly::Polyhedron Poly::GetBB()
 	return poly;
 }
 
-void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Polyhedron& poly, bool isConvex, Vector3 color)
+void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Polyhedron& poly, const std::vector<std::vector<int>>& extract, bool isConvex, Vector3 color)
 {
-	const auto faceVec = Poly::ExtractFaces(poly);
-	for (int i = 0; i < faceVec.size(); i++)
+	const size_t vertexOffset = vertexData.size();
+
+	vertexData.resize(vertexOffset + poly.size());
+	std::transform(poly.begin(), poly.end(), std::next(vertexData.begin(), vertexOffset), [&color](const Poly::Vertex& vert) { return VertexNormalColor(vert.Position, DirectX::XMFLOAT3(), color); });
+
+	if (TRUE == isConvex)
 	{
-		VMACH::PolygonFace f = { isConvex };
-		for (int j = 0; j < faceVec[i].size(); j++)
-			f.AddVertex(poly[faceVec[i][j]].Position);
-
-		if (FALSE == isConvex)
+		for (const auto& f : extract)
 		{
-			const Vector3 a = poly[faceVec[i][0]].Position;
-			const Vector3 b = poly[faceVec[i][1]].Position;
-			const Vector3 c = poly[faceVec[i][2]].Position;
-
-			Vector3 normal = (b - a).Cross(c - a);
-
-			if (TRUE == f.IsCCW(normal))
-				normal = -normal;
-
-			f.ManuallySetFacePlane(DirectX::SimpleMath::Plane(a, normal));
+			for (int v = 1; v < f.size() - 1; v++)
+			{
+				indexData.push_back(vertexOffset + f[0]);
+				indexData.push_back(vertexOffset + f[v]);
+				indexData.push_back(vertexOffset + f[v + 1]);
+			}
 		}
-
-		f.Render(vertexData, indexData, color);
+	}
+	else
+	{
+		for (const auto& f : extract)
+			for (const int v : EarClipping(poly, f))
+				indexData.push_back(vertexOffset + f[v]);
 	}
 }
 
@@ -671,4 +671,167 @@ Poly::Vector3 Poly::PlaneLineIntersection(const typename Vector3& a, const typen
 	const auto asgndist = plane.D() + plane.Normal().Dot(a);
 	const auto bsgndist = plane.D() + plane.Normal().Dot(b);
 	return ((a * bsgndist) - (b * asgndist)) / (bsgndist - asgndist);
+}
+
+bool Poly::IsCCW(const Polyhedron& polyhedron, const std::vector<int>& face, const Vector3& normal)
+{
+	Vector3 P = polyhedron[face[0]].Position;
+	Vector3 S;
+
+	for (int v = 0; v < face.size(); v++)
+		S += (polyhedron[face[v]].Position - P).Cross(polyhedron[face[(v + 1) % face.size()]].Position - P);
+
+	return S.Dot(normal) < 0;
+}
+
+std::vector<int> Poly::EarClipping(const Polyhedron& polyhedron, const std::vector<int>& face)
+{
+	struct VertexNode
+	{
+		VertexNode* Prev;
+		VertexNode* Next;
+		int         Index;
+		bool        IsReflex;
+	};
+
+	const int N = face.size();
+
+	const Vector3 a = polyhedron[face[0]].Position;
+	const Vector3 b = polyhedron[face[1]].Position;
+	const Vector3 c = polyhedron[face[2]].Position;
+	Vector3 normal = (b - a).Cross(c - a);
+	if (TRUE == IsCCW(polyhedron, face, normal))
+		normal = -normal;
+
+	std::vector<int> triangles;
+
+	if (N <= 2)
+		return triangles;
+
+	if (N == 3)
+	{
+		triangles.resize(3);
+		triangles = { 0, 1, 2 };
+		return triangles;
+	}
+
+	std::vector<VertexNode> vertices(N);
+
+	const auto isReflex = [&](const VertexNode& vertex)
+	{
+		const Vector3& a = polyhedron[face[vertex.Prev->Index]].Position;
+		const Vector3& b = polyhedron[face[vertex.Index]].Position;
+		const Vector3& c = polyhedron[face[vertex.Next->Index]].Position;
+
+		return !VMACH::OnYourRight(a, b, c, normal);
+	};
+
+	const auto initVertex = [&](const int& curIndex, const int& prevIndex, const int& nextIndex)
+	{
+		vertices[curIndex].Index = curIndex;
+		vertices[curIndex].Prev = &vertices[prevIndex];
+		vertices[curIndex].Next = &vertices[nextIndex];
+		vertices[curIndex].Prev->Index = prevIndex;
+		vertices[curIndex].Next->Index = nextIndex;
+		vertices[curIndex].IsReflex = isReflex(vertices[curIndex]);
+	};
+
+	// Initialize vertices.
+	initVertex(0, N - 1, 1);
+	initVertex(N - 1, N - 2, 0);
+
+	for (int i = 1; i < N - 1; i++)
+		initVertex(i, i - 1, i + 1);
+
+	// Initialize reflex vertices.
+	std::list<VertexNode*> reflexVertices;
+	for (int i = 0; i < N; i++)
+		if (TRUE == vertices[i].IsReflex)
+			reflexVertices.push_back(&vertices[i]);
+
+	const auto isEar = [&](const VertexNode& vertex)
+	{
+		if (TRUE == vertex.IsReflex)
+			return false;
+
+		const Vector3& a = polyhedron[face[vertex.Prev->Index]].Position;
+		const Vector3& b = polyhedron[face[vertex.Index]].Position;
+		const Vector3& c = polyhedron[face[vertex.Next->Index]].Position;
+
+		for (auto itr = reflexVertices.begin(); itr != reflexVertices.end(); itr++)
+		{
+			int index = (*itr)->Index;
+
+			if (index == vertex.Prev->Index || index == vertex.Next->Index)
+				continue;
+
+			if (polyhedron[face[index]].Position == a || polyhedron[face[index]].Position == b || polyhedron[face[index]] == c)
+				continue;
+
+			// Check any point is inside or not.
+			if (FALSE == VMACH::OnYourRight(a, b, polyhedron[face[index]].Position, normal))
+				continue;
+			if (FALSE == VMACH::OnYourRight(b, c, polyhedron[face[index]].Position, normal))
+				continue;
+			if (FALSE == VMACH::OnYourRight(c, a, polyhedron[face[index]].Position, normal))
+				continue;
+
+			return false;
+		}
+
+		return true;
+	};
+
+	// Do triangulation.
+	triangles.resize(3 * (N - 2));
+
+	int skipped = 0;
+	int triangleIndex = 0;
+	int nVertices = vertices.size();
+
+	VertexNode* current = &vertices[0];
+	while (nVertices > 3)
+	{
+		VertexNode* prev = current->Prev;
+		VertexNode* next = current->Next;
+
+		if (TRUE == isEar(*current))
+		{
+			triangles[triangleIndex + 0] = prev->Index;
+			triangles[triangleIndex + 1] = current->Index;
+			triangles[triangleIndex + 2] = next->Index;
+
+			prev->Next = next;
+			next->Prev = prev;
+
+			VertexNode* adjacent[2] = { prev, next };
+
+			for (int i = 0; i < 2; i++)
+			{
+				if (FALSE == adjacent[i]->IsReflex)
+					continue;
+
+				adjacent[i]->IsReflex = isReflex(*adjacent[i]);
+				if (FALSE == adjacent[i]->IsReflex)
+					reflexVertices.remove(adjacent[i]);
+			}
+
+			triangleIndex += 3;
+			nVertices--;
+			skipped = 0;
+		}
+		else if (++skipped > nVertices)
+		{
+			triangles.clear();
+			return triangles;
+		}
+
+		current = next;
+	}
+
+	triangles[triangleIndex + 0] = current->Prev->Index;
+	triangles[triangleIndex + 1] = current->Index;
+	triangles[triangleIndex + 2] = current->Next->Index;
+
+	return triangles;
 }

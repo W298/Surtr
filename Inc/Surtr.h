@@ -168,7 +168,12 @@ private:
 														  _In_ const Ray ray, 
 														  _Out_ float& dist);
 
+	void							AddPiece(const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex);
+	void							AddPieceManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
+
 	// Helper functions
+	void							AddMesh(MeshBase* mesh, physx::PxRigidActor* rigidBody);
+	
 	void							CreateTextureResource(_In_ const wchar_t* fileName,
 														  _Out_ ID3D12Resource** texture,
 														  _In_ ID3D12Resource** uploadHeap,

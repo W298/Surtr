@@ -44,12 +44,20 @@ void							Scale(Polyhedron& polyhedron, const Vector3& v);
 
 // Helper function.
 Polyhedron						GetBB();
-void							RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, std::vector<uint32_t>& indexData, const Polyhedron& poly, bool isConvex = true, Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
+void							RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
+												 std::vector<uint32_t>& indexData, 
+												 const Polyhedron& poly, 
+												 const std::vector<std::vector<int>>& extract, 
+												 bool isConvex = true,
+												 Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
 
 int								ComparePlanePoint(const Plane& plane, const Vector3& point);
 int								ComparePlaneBB(const Plane& plane, const double xmin, const double ymin, const double zmin, const double xmax, const double ymax, const double zmax);
 Vector3							PlaneLineIntersection(const typename Vector3& a, const typename Vector3& b, const Plane& plane);
 
+// Triangulization
+bool							IsCCW(const Polyhedron& polyhedron, const std::vector<int>& face, const Vector3& normal);
+std::vector<int>				EarClipping(const Polyhedron& polyhedron, const std::vector<int>& face);
 };
 
 #endif

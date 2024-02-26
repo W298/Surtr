@@ -138,4 +138,4 @@ QueryPerformanceCounter(&st)
 #define TIMER_STOP_PRINT \
     QueryPerformanceCounter(&en); \
     el=(float)(en.QuadPart-st.QuadPart)/freq.QuadPart; \
-    OutputDebugStringWFormat(L"%f ms\n", el*1000)
+    OutputDebugStringWFormat(L"%f\n", el*1000)
