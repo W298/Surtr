@@ -50,9 +50,11 @@ struct MeshBase
 		IndexData.clear();
 	}
 
-	void Render(ID3D12GraphicsCommandList* commandList, uint32_t meshIndex)
+	void Render(ID3D12GraphicsCommandList* commandList, uint32_t meshIndex, uint32_t debug = 0)
 	{
-		commandList->SetGraphicsRoot32BitConstant(3, meshIndex, 0);
+		const uint32_t root[] = { meshIndex, debug };
+
+		commandList->SetGraphicsRoot32BitConstants(3, 2, &root, 0);
 
 		commandList->IASetVertexBuffers(0, 1, &VBV);
 		commandList->IASetIndexBuffer(&IBV);

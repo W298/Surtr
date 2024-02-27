@@ -75,13 +75,19 @@ private:
 	{
 		INT			ICHIncludePointLimit = 20;
 		FLOAT		ACHPlaneGapInverse = 2000.0f;
+		
 		INT			Seed = 46354;
+		
 		XMFLOAT3	ImpactPosition;
 		FLOAT		ImpactRadius = 1.0f;
-		FLOAT		FracturePatternDist = 0.01f;
+
 		bool		PartialFracture = true;
-		INT			InitialDecomposeCellCnt = 128;
-		INT			FracturePatternCellCnt = 128;
+		FLOAT		PartialFracturePatternDist = 0.02f;
+		FLOAT		GeneralFracturePatternDist = 1.0f;
+		
+		INT			InitialDecomposeCellCnt = 64;
+		INT			PartialFracturePatternCellCnt = 128;
+		INT			GeneralFracturePatternCellCnt = 1024;
 	};
 
 	struct Piece
@@ -115,7 +121,9 @@ private:
 		std::vector<physx::PxRigidDynamic*>		RigidDynamicVec;
 		std::vector<std::vector<MeshBase*>>		CompoundMeshVec;
 		
-		std::vector<VMACH::Polygon3D>			FracturePattern;
+		std::vector<VMACH::Polygon3D>			PartialFracturePattern;
+		std::vector<VMACH::Polygon3D>			GeneralFracturePattern;
+		
 		Vector3									BBCenter;
 		Vector3									MinBB;
 		Vector3									MaxBB;
@@ -175,7 +183,7 @@ private:
 														  _In_ const Ray ray, 
 														  _Out_ float& dist);
 
-	void							InitCompound(const Compound& compound, bool renderConvex);
+	void							InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate = physx::PxVec3(0, 0, 0));
 	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
@@ -227,7 +235,7 @@ private:
 	static constexpr UINT                               c_swapBufferCount		= 3;
 	
 	// #TODO : Currently set count as constant.
-	static constexpr UINT								c_nSBCnt				= 1000;
+	static constexpr UINT								c_nSBCnt				= 5000;
 
 	// Back buffer index
 	UINT                                                m_backBufferIndex;
@@ -299,6 +307,9 @@ private:
 	std::vector<Vector3>								m_spherePointCloud;
 	std::vector<MeshSB>									m_structuredBufferData;
 	physx::PxRigidActor*								m_targetRigidBody;
+
+	DynamicMesh*										m_debugMesh;
+	StaticMesh*											m_groundMesh;
 
 	// Shadow
 	std::unique_ptr<ShadowMap>  			            m_shadowMap;

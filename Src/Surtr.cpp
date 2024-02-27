@@ -303,6 +303,9 @@ void Surtr::Update(DX::StepTimer const& timer)
 			continue;
 
 		rigidBody->getShapes(shapes, 1);
+		if (shapes[0] == nullptr)
+			continue;
+
 		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *rigidBody));
 		const XMMATRIX mat = PxMatToXMMATRIX(shapePose);
 
@@ -485,6 +488,8 @@ void Surtr::Render()
 				}
 			}
 
+			m_groundMesh->Render(m_commandList.Get(), 99999);
+
 			m_commandList->SetPipelineState(m_wireframePSO.Get());
 
 			id = 0;
@@ -513,6 +518,8 @@ void Surtr::Render()
 				}
 			}
 
+			m_debugMesh->Render(m_commandList.Get(), 99999);
+
 			// Draw imgui.
 			{
 				ImGui_ImplDX12_NewFrame();
@@ -530,18 +537,8 @@ void Surtr::Render()
 					ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
 					ImGui::Text("[Arguments]");
-					ImGui::SliderInt("ICH Included Points", &m_fractureArgs.ICHIncludePointLimit, 20, 1000);
-					ImGui::SliderFloat("ACH Plane Gap Inverse", &m_fractureArgs.ACHPlaneGapInverse, 0.0f, 10000.0f);
-
-					ImGui::Dummy(ImVec2(0.0f, 10.0f));
-
-					ImGui::SliderInt("Initial Decompose Cell Cnt", &m_fractureArgs.InitialDecomposeCellCnt, 16, 128);
-					ImGui::SliderInt("Fracture Pattern Cell Cnt", &m_fractureArgs.FracturePatternCellCnt, 16, 128);
-
-					ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
 					ImGui::Checkbox("Partial Fracture", &m_fractureArgs.PartialFracture);
-					ImGui::SliderFloat("Fracture Pattern Distribution", &m_fractureArgs.FracturePatternDist, 0.001f, 1.0f);
 					ImGui::SliderFloat("Impact Radius", &m_fractureArgs.ImpactRadius, 0.1f, 10.0f);
 					ImGui::Text("Impact Point: %.3f %.3f %.3f", m_fractureArgs.ImpactPosition.x, m_fractureArgs.ImpactPosition.y, m_fractureArgs.ImpactPosition.z);
 
@@ -884,7 +881,7 @@ void Surtr::CreateDeviceDependentResources()
 		rootParameters[0].InitAsDescriptorTable(1, &srvTable);  
 		rootParameters[1].InitAsConstantBufferView(0);				// register (b0)
 		rootParameters[2].InitAsConstantBufferView(1);				// register (b1)
-		rootParameters[3].InitAsConstants(1u, 4u);					// register (b4, space0)
+		rootParameters[3].InitAsConstants(2u, 4u);					// register (b4, space0)
 		rootParameters[4].InitAsDescriptorTable(1, &srvTableSB);
 
 		// Define samplers.
@@ -1387,25 +1384,25 @@ void Surtr::CreateCommandListDependentResources()
 	switch (m_modelIndex)
 	{
 	case 0:
-		LoadModelData("Resources\\Models\\lucy.obj", XMFLOAT3(50, 50, 50), XMFLOAT3(0, 20, 0), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\lowpoly-bunny-closed.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	case 1:
-		LoadModelData("Resources\\Models\\stanford-bunny.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\cube.obj", XMFLOAT3(3, 3, 3), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	case 2:
-		LoadModelData("Resources\\Models\\lowpoly-bunny-closed.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\pumpkin.obj", XMFLOAT3(0.15, 0.15, 0.15), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	case 3:
-		LoadModelData("Resources\\Models\\cube.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\cylinder.obj", XMFLOAT3(3, 3, 3), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	case 4:
-		LoadModelData("Resources\\Models\\pump.obj", XMFLOAT3(0.15, 0.15, 0.15), XMFLOAT3(0, 4, -0.85), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\highpoly-sphere.obj", XMFLOAT3(5, 5, 5), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	case 5:
-		LoadModelData("Resources\\Models\\cylinder.obj", XMFLOAT3(10, 10, 10), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+		LoadModelData("Resources\\Models\\cessna.obj", XMFLOAT3(0.6, 0.6, 0.6), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
-	default:
-		LoadModelData("Resources\\Models\\lowpoly-bunny-closed.obj", XMFLOAT3(70, 70, 70), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
+	case 6:
+		LoadModelData("Resources\\Models\\shuttle.obj", XMFLOAT3(1, 1, 1), XMFLOAT3(0, 0, 0), objectVertexData, objectIndexData);
 		break;
 	}
 
@@ -1423,9 +1420,9 @@ void Surtr::CreateCommandListDependentResources()
 	{
 		std::vector<VertexNormalColor> groundVertexData;
 		std::vector<uint32_t> groundIndexData;
-		LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, 0, 0), groundVertexData, groundIndexData);
+		LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, -2, 0), groundVertexData, groundIndexData);
 
-		StaticMesh* groundMesh = PrepareMeshResource(groundVertexData, groundIndexData);
+		m_groundMesh = PrepareMeshResource(groundVertexData, groundIndexData);
 
 		PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 2), *gMaterial);
 		gScene->addActor(*groundRigidBody);
@@ -1434,7 +1431,16 @@ void Surtr::CreateCommandListDependentResources()
 	// Set initial compound.
 	{
 		Compound initialCompound = PrepareFracture(objectVertexData, objectIndexData);
-		InitCompound(initialCompound, false);
+		InitCompound(initialCompound, false, PxVec3(0, 5, 0));
+	}
+
+	{
+		std::vector<VertexNormalColor> vertices;
+		std::vector<uint32_t> indices;
+		const auto cube = Poly::GetBB();
+
+		Poly::RenderPolyhedron(vertices, indices, cube, Poly::ExtractFaces(cube), true, Vector3(0, 1, 0));
+		m_debugMesh = PrepareDynamicMeshResource(vertices, indices);
 	}
 
 	// Upload structured data.
@@ -1671,7 +1677,8 @@ Surtr::Compound Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>
 	}
 
 	// 9. Generate Fracture Pattern.
-	m_fractureStorage.FracturePattern = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
+	m_fractureStorage.PartialFracturePattern = GenerateFracturePattern(m_fractureArgs.PartialFracturePatternCellCnt, m_fractureArgs.PartialFracturePatternDist);
+	m_fractureStorage.GeneralFracturePattern = GenerateFracturePattern(m_fractureArgs.GeneralFracturePatternCellCnt, m_fractureArgs.GeneralFracturePatternDist);
 
 	// 10. Generate initial pieces.
 	Compound preCompound = Compound({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) });
@@ -1695,7 +1702,7 @@ Surtr::Compound Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>
 
 std::vector<Surtr::Compound> Surtr::DoFracture(const Compound& targetCompound)
 {
-	std::vector<VMACH::Polygon3D> localFracturePattern = m_fractureStorage.FracturePattern;
+	std::vector<VMACH::Polygon3D> localFracturePattern = m_fractureArgs.PartialFracture ? m_fractureStorage.PartialFracturePattern : m_fractureStorage.GeneralFracturePattern;
 	std::vector<Vector3> localSpherePointCloud = m_spherePointCloud;
 
 	// Scale.
@@ -1705,6 +1712,19 @@ std::vector<Surtr::Compound> Surtr::DoFracture(const Compound& targetCompound)
 	// Alignment.
 	for (VMACH::Polygon3D& voro : localFracturePattern)
 		voro.Translate(m_fractureArgs.ImpactPosition);
+
+	{
+		std::vector<VertexNormalColor> vertices;
+		std::vector<uint32_t> indices;
+		Poly::Polyhedron cube = Poly::GetBB();
+		Poly::Scale(cube, Vector3(m_fractureStorage.MaxAxisScale, m_fractureStorage.MaxAxisScale, m_fractureStorage.MaxAxisScale) * 2);
+		Poly::Translate(cube, m_fractureArgs.ImpactPosition);
+
+		Poly::RenderPolyhedron(vertices, indices, cube, Poly::ExtractFaces(cube), true, Vector3(0, 1, 0));
+		m_debugMesh = PrepareDynamicMeshResource(vertices, indices);
+
+		UpdateDynamicMesh(m_debugMesh, vertices, indices);
+	}
 
 	// Align sphere point cloud.
 	for (auto& v : localSpherePointCloud)
@@ -2340,9 +2360,9 @@ bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ cons
 	return hit;
 }
 
-void Surtr::InitCompound(const Compound& compound, bool renderConvex)
+void Surtr::InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate)
 {
-	PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(PxVec3(0, 0, 0)));
+	PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(translate));
 
 	std::vector<MeshBase*> meshes;
 	for (int i = 0; i < compound.PieceVec.size(); i++)
@@ -2391,6 +2411,7 @@ PxConvexMeshGeometry Surtr::CookingConvex(const Piece& piece, const std::vector<
 	PxTolerancesScale scale;
 	PxCookingParams params(scale);
 	params.planeTolerance = 0.000007f;
+	params.meshPreprocessParams = PxMeshPreprocessingFlag::eWELD_VERTICES;
 
 	PxConvexMesh* convexMesh = PxCreateConvexMesh(params, convexDesc, gPhysics->getPhysicsInsertionCallback());
 	
