@@ -616,6 +616,68 @@ Poly::Polyhedron Poly::GetBB()
 	return poly;
 }
 
+void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData, 
+								  std::vector<uint32_t>& indexData, 
+								  const Polyhedron& poly, 
+								  bool isConvex, 
+								  Vector3 color)
+{
+	const auto faceVec = Poly::ExtractFaces(poly);
+	for (int i = 0; i < faceVec.size(); i++)
+	{
+		VMACH::PolygonFace f = { isConvex };
+		for (int j = 0; j < faceVec[i].size(); j++)
+			f.AddVertex(poly[faceVec[i][j]].Position);
+
+		if (FALSE == isConvex)
+		{
+			const Vector3 a = poly[faceVec[i][0]].Position;
+			const Vector3 b = poly[faceVec[i][1]].Position;
+			const Vector3 c = poly[faceVec[i][2]].Position;
+
+			Vector3 normal = (b - a).Cross(c - a);
+
+			if (TRUE == f.IsCCW(normal))
+				normal = -normal;
+
+			f.ManuallySetFacePlane(DirectX::SimpleMath::Plane(a, normal));
+		}
+
+		f.Render(vertexData, indexData, color);
+	}
+}
+
+void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
+								  std::vector<uint32_t>& indexData,
+								  const Polyhedron& poly,
+								  const std::vector<std::vector<int>>& extract,
+								  bool isConvex,
+								  Vector3 color)
+{
+	for (int i = 0; i < extract.size(); i++)
+	{
+		VMACH::PolygonFace f = { isConvex };
+		for (int j = 0; j < extract[i].size(); j++)
+			f.AddVertex(poly[extract[i][j]].Position);
+
+		if (FALSE == isConvex)
+		{
+			const Vector3 a = poly[extract[i][0]].Position;
+			const Vector3 b = poly[extract[i][1]].Position;
+			const Vector3 c = poly[extract[i][2]].Position;
+
+			Vector3 normal = (b - a).Cross(c - a);
+
+			if (TRUE == f.IsCCW(normal))
+				normal = -normal;
+
+			f.ManuallySetFacePlane(DirectX::SimpleMath::Plane(a, normal));
+		}
+
+		f.Render(vertexData, indexData, color);
+	}
+}
+
 void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
 							std::vector<uint32_t>& indexData, 
 							const Polyhedron& poly, 

@@ -203,7 +203,8 @@ private:
 														_In_ const std::vector<uint32_t>& indices);
 
 	DynamicMesh*					PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices,
-															   _In_ const std::vector<uint32_t>& indices);
+															   _In_ const std::vector<uint32_t>& indices,
+															   bool usePool = false);
 
 	void							UpdateDynamicMesh(_Inout_ DynamicMesh* dynamicMesh,
 													  _In_ const std::vector<VertexNormalColor>& vertices,
@@ -307,6 +308,8 @@ private:
 	std::vector<Vector3>								m_spherePointCloud;
 	std::vector<MeshSB>									m_structuredBufferData;
 	physx::PxRigidActor*								m_targetRigidBody;
+
+	std::queue<DynamicMesh*>							m_dynamicMeshPool;
 
 	DynamicMesh*										m_debugMesh;
 	StaticMesh*											m_groundMesh;

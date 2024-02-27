@@ -101,6 +101,21 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT mode
 	CreateDeviceResources();
 	CreateDeviceDependentResources();
 	CreateWindowSizeDependentResources();
+
+	//#TODO: Mesh Pool.
+	for (int i = 0; i < 500; i++)
+	{
+		DynamicMesh* mesh = new DynamicMesh();
+
+		mesh->AllocatedVBSize = sizeof(VertexNormalColor) * 10000;
+		mesh->AllocatedIBSize = sizeof(uint32_t) * 10000;
+
+		mesh->AllocateVB(m_d3dDevice.Get());
+		mesh->AllocateIB(m_d3dDevice.Get());
+
+		m_dynamicMeshPool.push(mesh);
+	}
+
 	CreateCommandListDependentResources();
 
 	// Fixed timestep for simulation.
@@ -577,9 +592,14 @@ void Surtr::Render()
 							m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
 							m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
 							m_structuredBufferData.erase(std::next(m_structuredBufferData.begin(), startID), std::next(m_structuredBufferData.begin(), endID + 1));
-
+							
+							TIMER_INIT;
+							TIMER_START_NAME(L"Allocation\t\t");
+							
 							for (Compound& compound : fracturedCompoundVec)
 								InitCompound(compound, false);
+
+							TIMER_STOP_PRINT;
 						}
 						else
 							OutputDebugStringW(L"Impact point is not valid!\n");
@@ -2377,11 +2397,11 @@ void Surtr::InitCompound(const Compound& compound, bool renderConvex, const phys
 		std::vector<uint32_t> indexData;
 
 		if (TRUE == renderConvex)
-			Poly::RenderPolyhedron(vertexData, indexData, piece.Convex, extract, true);
+			Poly::RenderPolyhedronNormal(vertexData, indexData, piece.Convex, extract, true);
 		else
-			Poly::RenderPolyhedron(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
+			Poly::RenderPolyhedronNormal(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
 
-		DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
+		DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData, true);
 		meshes.push_back(mesh);
 	}
 
@@ -2679,8 +2699,27 @@ StaticMesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>
 	return staticMesh;
 }
 
-DynamicMesh* Surtr::PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
+DynamicMesh* Surtr::PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices, bool usePool)
 {
+	if (TRUE == usePool)
+	{
+		DynamicMesh* dynamicMesh = m_dynamicMeshPool.front();
+		m_dynamicMeshPool.pop();
+
+		dynamicMesh->VertexData = vertices;
+		dynamicMesh->IndexData = indices;
+		dynamicMesh->VertexCount = vertices.size();
+		dynamicMesh->IndexCount = indices.size();
+		dynamicMesh->RenderOption = (MeshBase::RenderOptionType::SOLID | MeshBase::RenderOptionType::WIREFRAME);
+		dynamicMesh->RenderVBSize = sizeof(VertexNormalColor) * vertices.size();
+		dynamicMesh->RenderIBSize = sizeof(uint32_t) * indices.size();
+
+		dynamicMesh->UploadVB();
+		dynamicMesh->UploadIB();
+
+		return dynamicMesh;
+	}
+
 	DynamicMesh* dynamicMesh = new DynamicMesh(vertices, indices);
 
 	// Prepare vertex buffer.

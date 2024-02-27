@@ -45,6 +45,20 @@ void							Transform(Polyhedron& polyhedron, const DirectX::XMMATRIX& matrix);
 
 // Helper function.
 Polyhedron						GetBB();
+
+void							RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
+													   std::vector<uint32_t>& indexData,
+													   const Polyhedron& poly,
+													   bool isConvex,
+													   Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
+
+void							RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
+													   std::vector<uint32_t>& indexData,
+													   const Polyhedron& poly,
+													   const std::vector<std::vector<int>>& extract,
+													   bool isConvex,
+													   Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
+
 void							RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
 												 std::vector<uint32_t>& indexData, 
 												 const Polyhedron& poly, 
