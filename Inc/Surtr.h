@@ -76,7 +76,7 @@ private:
 		INT			ICHIncludePointLimit = 20;
 		FLOAT		ACHPlaneGapInverse = 2000.0f;
 		INT			Seed = 46354;
-		XMFLOAT3	ImpactPosition = DirectX::XMFLOAT3(0, 6, 4);
+		XMFLOAT3	ImpactPosition;
 		FLOAT		ImpactRadius = 1.0f;
 		FLOAT		FracturePatternDist = 0.01f;
 		bool		PartialFracture = true;
@@ -115,11 +115,11 @@ private:
 		std::vector<physx::PxRigidDynamic*>		RigidDynamicVec;
 		std::vector<std::vector<MeshBase*>>		CompoundMeshVec;
 		
-		std::vector<VMACH::Polygon3D>	FracturePattern;
-		Vector3							BBCenter;
-		Vector3							MinBB;
-		Vector3							MaxBB;
-		float							MaxAxisScale;
+		std::vector<VMACH::Polygon3D>			FracturePattern;
+		Vector3									BBCenter;
+		Vector3									MinBB;
+		Vector3									MaxBB;
+		float									MaxAxisScale;
 	};
 
 	void Update(DX::StepTimer const& timer);

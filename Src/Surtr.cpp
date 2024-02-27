@@ -194,6 +194,24 @@ void Surtr::OnMouseDown()
 	{
 		m_fractureArgs.ImpactPosition = Vector3(hit.block.position.x, hit.block.position.y, hit.block.position.z);
 		m_targetRigidBody = hit.block.actor;
+
+		auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), m_targetRigidBody);
+		if (itr != m_fractureStorage.RigidDynamicVec.end())
+		{
+			int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
+			std::vector<MeshBase*>& meshVec = m_fractureStorage.CompoundMeshVec[targetIndex];
+
+			for (MeshBase* mesh : meshVec)
+			{
+				std::vector<VertexNormalColor> vertices(mesh->VertexData.size());
+				std::transform(mesh->VertexData.begin(), 
+							   mesh->VertexData.end(), 
+							   vertices.begin(), 
+							   [](const VertexNormalColor& vnc) { return VertexNormalColor(vnc.Position, XMFLOAT3(), XMFLOAT3(1, 0, 0)); });
+
+				UpdateDynamicMesh((DynamicMesh*)mesh, vertices, mesh->IndexData);
+			}
+		}
 	}
 }
 
@@ -224,11 +242,7 @@ void Surtr::Update(DX::StepTimer const& timer)
 	m_viewMatrix = XMMatrixLookAtLH(m_camPosition, m_camLookTarget, m_camUp);
 
 	// Update projection matrix.
-	m_projectionMatrix = XMMatrixPerspectiveFovLH(
-		XM_PIDIV4,
-		m_aspectRatio,
-		0.01f,
-		1000);
+	m_projectionMatrix = XMMatrixPerspectiveFovLH(XM_PIDIV4, m_aspectRatio, 0.01f, 1000);
 
 	// Light rotation update.
 	if (m_lightRotation)
@@ -539,40 +553,39 @@ void Surtr::Render()
 
 					if (ImGui::Button("Simulate!"))
 					{
-						TIMER_INIT;
-						TIMER_START_NAME(L"Clean-up Previous Results\t\t");
-
 						auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), m_targetRigidBody);
-						if (itr == m_fractureStorage.RigidDynamicVec.end())
-							throw std::exception();
-
-						int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
-						Compound& targetCompound = m_fractureStorage.CompoundVec[targetIndex];
-
-						//#TODO: Need Fix.
-						int id = 0;
-						for (Compound& compound : m_fractureStorage.CompoundVec)
+						if (itr != m_fractureStorage.RigidDynamicVec.end())
 						{
-							for (Piece& piece : compound.PieceVec)
+							int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
+							Compound& targetCompound = m_fractureStorage.CompoundVec[targetIndex];
+
+							int startID = 0;
+							for (int i = 0; i < targetIndex; i++)
+								startID += m_fractureStorage.CompoundVec[i].PieceVec.size();
+
+							int endID = startID + m_fractureStorage.CompoundVec[targetIndex].PieceVec.size() - 1;
+
+							for (int j = 0; j < m_fractureStorage.CompoundVec[targetIndex].PieceVec.size(); j++)
 							{
-								Poly::Transform(piece.Convex, m_structuredBufferData[id].WorldMatrix);
-								Poly::Transform(piece.Mesh, m_structuredBufferData[id].WorldMatrix);
+								Piece& piece = m_fractureStorage.CompoundVec[targetIndex].PieceVec[j];
 
-								id++;
+								Poly::Transform(piece.Convex, m_structuredBufferData[startID + j].WorldMatrix);
+								Poly::Transform(piece.Mesh, m_structuredBufferData[startID + j].WorldMatrix);
 							}
+
+							std::vector<Compound> fracturedCompoundVec = DoFracture(targetCompound);
+
+							gScene->removeActor(*m_targetRigidBody);
+							m_fractureStorage.RigidDynamicVec.erase(std::next(m_fractureStorage.RigidDynamicVec.begin(), targetIndex));
+							m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
+							m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
+							m_structuredBufferData.erase(std::next(m_structuredBufferData.begin(), startID), std::next(m_structuredBufferData.begin(), endID + 1));
+
+							for (Compound& compound : fracturedCompoundVec)
+								InitCompound(compound, false);
 						}
-
-						TIMER_STOP_PRINT;
-
-						std::vector<Compound> fracturedCompoundVec = DoFracture(targetCompound);
-
-						gScene->removeActor(*m_targetRigidBody);
-						m_fractureStorage.RigidDynamicVec.erase(std::next(m_fractureStorage.RigidDynamicVec.begin(), targetIndex));
-						m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
-						m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
-
-						for (Compound& compound : fracturedCompoundVec)
-							InitCompound(compound, false);
+						else
+							OutputDebugStringW(L"Impact point is not valid!\n");
 					}
 
 					ImGui::Text("[Results]");
