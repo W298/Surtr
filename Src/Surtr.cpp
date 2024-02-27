@@ -191,7 +191,10 @@ void Surtr::OnMouseDown()
 	PxRaycastBuffer hit;
 
 	if (TRUE == gScene->raycast(origin, direction, maxDistance, hit))
+	{
 		m_fractureArgs.ImpactPosition = Vector3(hit.block.position.x, hit.block.position.y, hit.block.position.z);
+		m_targetRigidBody = hit.block.actor;
+	}
 }
 
 // Updates the world.
@@ -277,24 +280,24 @@ void Surtr::Update(DX::StepTimer const& timer)
 
 	// Update world matrix.
 	PxShape* shapes[MAX_NUM_ACTOR_SHAPES];
-	for (int i = 0; i < m_rigidVec.size(); i++)
+
+	int id = 0;
+	for (int i = 0; i < m_fractureStorage.RigidDynamicVec.size(); i++)
 	{
-		if (m_rigidVec[i].first == nullptr)
+		PxRigidDynamic* rigidBody = m_fractureStorage.RigidDynamicVec[i];
+		if (rigidBody == nullptr)
 			continue;
 
-		m_rigidVec[i].first->getShapes(shapes, 1);
+		rigidBody->getShapes(shapes, 1);
+		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *rigidBody));
+		const XMMATRIX mat = PxMatToXMMATRIX(shapePose);
 
-		const PxMat44 shapePose(PxShapeExt::getGlobalPose(*shapes[0], *m_rigidVec[i].first));
-		const PxGeometry& geom = shapes[0]->getGeometry();
+		for (int j = 0; j < m_fractureStorage.CompoundMeshVec[i].size(); j++)
+		{
+			m_structuredBufferData[id].WorldMatrix = XMMatrixTranspose(mat);
 
-		XMMATRIX mat = {};
-		if (geom.getType() == PxGeometryType::ePLANE)
-			mat = XMMatrixTranslation(shapePose.column3.x, shapePose.column3.y, shapePose.column3.z);
-		else
-			mat = PxMatToXMMATRIX(shapePose);
-		
-		for (const int meshIndex : m_rigidVec[i].second)
-			m_meshMatrixVec[meshIndex].WorldMatrix = XMMatrixTranspose(mat);
+			id++;
+		}
 	}
 }
 
@@ -304,7 +307,7 @@ void Surtr::UploadStructuredBuffer()
 	UINT8* bufferBegin = nullptr;
 
 	DX::ThrowIfFailed(m_sbUploadHeap->Map(0, &readRange, reinterpret_cast<void**>(&bufferBegin)));
-	memcpy(bufferBegin, m_meshMatrixVec.data(), sizeof(MeshSB) * m_meshMatrixVec.size());
+	memcpy(bufferBegin, m_structuredBufferData.data(), sizeof(MeshSB) * m_structuredBufferData.size());
 	m_sbUploadHeap->Unmap(0, nullptr);
 }
 
@@ -384,10 +387,16 @@ void Surtr::Render()
 			// Set Topology and VB.
 			m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			for (int i = 0; i < m_meshVec.size(); i++)
+			int id = 0;
+			for (const auto& compoundMeshes : m_fractureStorage.CompoundMeshVec)
 			{
-				if (StaticMesh::RenderOptionType::NOT_RENDER ^ m_meshVec[i]->RenderOption)
-					m_meshVec[i]->Render(m_commandList.Get(), i);
+				for (MeshBase* mesh : compoundMeshes)
+				{
+					if (StaticMesh::RenderOptionType::NOT_RENDER ^ mesh->RenderOption)
+						mesh->Render(m_commandList.Get(), id);
+
+					id++;
+				}
 			}
 		}
 		// <--- GENERIC_READ
@@ -450,26 +459,44 @@ void Surtr::Render()
 			// Set Topology and VB.
 			m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-			for (int i = 0; i < m_meshVec.size(); i++)
+			int id = 0;
+			for (const auto& compoundMeshes : m_fractureStorage.CompoundMeshVec)
 			{
-				if (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption)
-					m_meshVec[i]->Render(m_commandList.Get(), i);
+				for (MeshBase* mesh : compoundMeshes)
+				{
+					if (StaticMesh::RenderOptionType::SOLID & mesh->RenderOption)
+						mesh->Render(m_commandList.Get(), id);
+					
+					id++;
+				}
 			}
 
 			m_commandList->SetPipelineState(m_wireframePSO.Get());
 
-			for (int i = 0; i < m_meshVec.size(); i++)
+			id = 0;
+			for (const auto& compoundMeshes : m_fractureStorage.CompoundMeshVec)
 			{
-				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && (StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
-					m_meshVec[i]->Render(m_commandList.Get(), i);
+				for (MeshBase* mesh : compoundMeshes)
+				{
+					if ((StaticMesh::RenderOptionType::WIREFRAME & mesh->RenderOption) && (StaticMesh::RenderOptionType::SOLID & mesh->RenderOption))
+						mesh->Render(m_commandList.Get(), id);
+
+					id++;
+				}
 			}
 
 			m_commandList->SetPipelineState(m_coloredWireframePSO.Get());
 
-			for (int i = 0; i < m_meshVec.size(); i++)
+			id = 0;
+			for (const auto& compoundMeshes : m_fractureStorage.CompoundMeshVec)
 			{
-				if ((StaticMesh::RenderOptionType::WIREFRAME & m_meshVec[i]->RenderOption) && !(StaticMesh::RenderOptionType::SOLID & m_meshVec[i]->RenderOption))
-					m_meshVec[i]->Render(m_commandList.Get(), i);
+				for (MeshBase* mesh : compoundMeshes)
+				{
+					if ((StaticMesh::RenderOptionType::WIREFRAME & mesh->RenderOption) && !(StaticMesh::RenderOptionType::SOLID & mesh->RenderOption))
+						mesh->Render(m_commandList.Get(), id);
+
+					id++;
+				}
 			}
 
 			// Draw imgui.
@@ -485,10 +512,6 @@ void Surtr::Render()
 					ImGui::Text("%d x %d (Resolution)", m_outputWidth, m_outputHeight);
 					ImGui::Text("%d x %d (Shadow Map Resolution)", m_shadowMapSize, m_shadowMapSize);
 					ImGui::TextColored(ImVec4(1, 1, 0, 1), "%.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-
-					ImGui::Dummy(ImVec2(0.0f, 20.0f));
-
-					ImGui::Text("Mesh Vertex Count: %d", m_meshVec[0]->VertexCount);
 
 					ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -519,33 +542,37 @@ void Surtr::Render()
 						TIMER_INIT;
 						TIMER_START_NAME(L"Clean-up Previous Results\t\t");
 
-						for (int i = 1; i < m_rigidVec.size(); i++)
-							gScene->removeActor(*m_rigidVec[i].first);
+						auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), m_targetRigidBody);
+						if (itr == m_fractureStorage.RigidDynamicVec.end())
+							throw std::exception();
 
-						m_rigidVec.resize(1);
+						int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
+						Compound& targetCompound = m_fractureStorage.CompoundVec[targetIndex];
 
-						for (int i = 1; i < m_meshMatrixVec.size(); i++)
+						//#TODO: Need Fix.
+						int id = 0;
+						for (Compound& compound : m_fractureStorage.CompoundVec)
 						{
-							Poly::Transform(m_fractureStorage.RecentCompound.PieceVec[i - 1].Convex, m_meshMatrixVec[i].WorldMatrix);
-							Poly::Transform(m_fractureStorage.RecentCompound.PieceVec[i - 1].Mesh, m_meshMatrixVec[i].WorldMatrix);
-						}
+							for (Piece& piece : compound.PieceVec)
+							{
+								Poly::Transform(piece.Convex, m_structuredBufferData[id].WorldMatrix);
+								Poly::Transform(piece.Mesh, m_structuredBufferData[id].WorldMatrix);
 
-						m_meshVec.resize(1);
-						m_meshMatrixVec.resize(1);
+								id++;
+							}
+						}
 
 						TIMER_STOP_PRINT;
 
-						DoFracture();
-						InitCompound(m_fractureStorage.RecentCompound, false);
+						std::vector<Compound> fracturedCompoundVec = DoFracture(targetCompound);
 
-						for (int i = 1; i < m_rigidVec.size(); i++)
-						{
-							if (m_rigidVec[i].first->is<PxRigidStatic>())
-								continue;
+						gScene->removeActor(*m_targetRigidBody);
+						m_fractureStorage.RigidDynamicVec.erase(std::next(m_fractureStorage.RigidDynamicVec.begin(), targetIndex));
+						m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
+						m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
 
-							PxVec3 pos(m_fractureArgs.ImpactPosition.x, m_fractureArgs.ImpactPosition.y, m_fractureArgs.ImpactPosition.z);
-							PxRigidBodyExt::addForceAtPos(*(PxRigidDynamic*)(m_rigidVec[i].first), PxVec3(2, 0, 0), pos);
-						}
+						for (Compound& compound : fracturedCompoundVec)
+							InitCompound(compound, false);
 					}
 
 					ImGui::Text("[Results]");
@@ -1389,15 +1416,12 @@ void Surtr::CreateCommandListDependentResources()
 
 		PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 2), *gMaterial);
 		gScene->addActor(*groundRigidBody);
-
-		const int meshIndex = AddMesh(groundMesh);
-		m_rigidVec.emplace_back(groundRigidBody, std::vector<int> { (int)meshIndex });
 	}
 
 	// Set initial compound.
 	{
-		PrepareFracture(objectVertexData, objectIndexData);
-		InitCompound(m_fractureStorage.RecentCompound, false);
+		Compound initialCompound = PrepareFracture(objectVertexData, objectIndexData);
+		InitCompound(initialCompound, false);
 	}
 
 	// Upload structured data.
@@ -1522,8 +1546,9 @@ void Surtr::OnDeviceLost()
 	m_shadowMap.reset();
 
 	// Meshes
-	for (int i = 0; i < m_meshVec.size(); i++)
-		delete m_meshVec[i];
+	for (auto& meshes : m_fractureStorage.CompoundMeshVec)
+		for (MeshBase* mesh : meshes)
+			delete mesh;
 
 	// Textures
 	m_colorLTexResource.Reset();
@@ -1574,7 +1599,7 @@ void Surtr::OnDeviceLost()
 	CreateCommandListDependentResources();
 }
 
-void Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices, _In_ const std::vector<uint32_t>& visualMeshIndices)
+Surtr::Compound Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices, _In_ const std::vector<uint32_t>& visualMeshIndices)
 {
 	// 1. Create intermediate convex hull with limit count.
 	std::vector<Vector3> vertices(visualMeshVertices.size());
@@ -1636,20 +1661,26 @@ void Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMes
 	m_fractureStorage.FracturePattern = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
 
 	// 10. Generate initial pieces.
-	CompoundInfo preCompound = CompoundInfo({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) }, { { 0 } });
+	Compound preCompound = Compound({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) });
 	CompoundInfo initial = ApplyFracture(preCompound, voroPolyVec, m_spherePointCloud);
 	
 	Refitting(initial.PieceVec);
 	SetExtract(initial);
 
-	for (int comp = 1; comp < initial.CompoundBind.size(); comp++)
-		initial.CompoundBind[0].insert(initial.CompoundBind[comp].begin(), initial.CompoundBind[comp].end());
-	
-	initial.CompoundBind.resize(1);
-	m_fractureStorage.RecentCompound = initial;
+	Compound result;
+	for (const auto& iComp : initial.CompoundBind)
+	{
+		for (const int iPiece : iComp)
+		{
+			result.PieceVec.push_back(initial.PieceVec[iPiece]);
+			result.PieceExtractedConvex.push_back(initial.PieceExtractedConvex[iPiece]);
+		}
+	}
+
+	return result;
 }
 
-void Surtr::DoFracture()
+std::vector<Surtr::Compound> Surtr::DoFracture(const Compound& targetCompound)
 {
 	std::vector<VMACH::Polygon3D> localFracturePattern = m_fractureStorage.FracturePattern;
 	std::vector<Vector3> localSpherePointCloud = m_spherePointCloud;
@@ -1673,10 +1704,7 @@ void Surtr::DoFracture()
 	TIMER_START_NAME(L"ApplyFracture\t\t");
 
 	// 11. Apply fracture pattern.
-	CompoundInfo second = ApplyFracture(m_fractureStorage.RecentCompound, 
-										localFracturePattern, 
-										localSpherePointCloud, 
-										m_fractureArgs.PartialFracture);
+	CompoundInfo second = ApplyFracture(targetCompound, localFracturePattern, localSpherePointCloud, m_fractureArgs.PartialFracture);
 	SetExtract(second);
 
 	TIMER_STOP_PRINT;
@@ -1698,7 +1726,22 @@ void Surtr::DoFracture()
 
 	TIMER_STOP_PRINT;
 
-	m_fractureStorage.RecentCompound = second;
+	std::vector<Compound> result;
+	for (const auto& iComp : second.CompoundBind)
+	{
+		std::vector<Piece> pieceVec;
+		std::vector<std::vector<std::vector<int>>> extractVec;
+
+		for (const int iPiece : iComp)
+		{
+			pieceVec.push_back(second.PieceVec[iPiece]);
+			extractVec.push_back(second.PieceExtractedConvex[iPiece]);
+		}
+
+		result.push_back(Compound(pieceVec, extractVec));
+	}
+
+	return result;
 }
 
 std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit)
@@ -1838,7 +1881,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cell
 	return GenerateVoronoi(cellPointVec);
 }
 
-Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const CompoundInfo& preResult, 
+Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound, 
 										 _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
 										 _In_ const std::vector<Vector3>& spherePointCloud, 
 										 _In_ bool partial)
@@ -1846,8 +1889,8 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const CompoundInfo& preResult,
 	std::vector<Piece> decompose;
 	std::vector<std::set<int>> bind;
 
-	const std::vector<Piece>& targetPieceVec = preResult.PieceVec;
-	const std::vector<std::vector<std::vector<int>>>& extract = preResult.PieceExtractedConvex;
+	const std::vector<Piece>& targetPieceVec = compound.PieceVec;
+	const std::vector<std::vector<std::vector<int>>>& extract = compound.PieceExtractedConvex;
 
 	// Check convex located at outside or not.
 	std::set<int> outside;
@@ -2284,39 +2327,38 @@ bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ cons
 	return hit;
 }
 
-void Surtr::InitCompound(const CompoundInfo& compoundInfo, bool renderConvex)
+void Surtr::InitCompound(const Compound& compound, bool renderConvex)
 {
-	for (const auto& compound : compoundInfo.CompoundBind)
+	PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(PxVec3(0, 0, 0)));
+
+	std::vector<MeshBase*> meshes;
+	for (int i = 0; i < compound.PieceVec.size(); i++)
 	{
-		PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(PxVec3(0, 0, 0)));
+		const Piece& piece = compound.PieceVec[i];
+		const std::vector<std::vector<int>>& extract = compound.PieceExtractedConvex[i];
 
-		std::vector<int> bindMesh;
-		for (const int iPiece : compound)
-		{
-			const Piece& piece = compoundInfo.PieceVec[iPiece];
-			const std::vector<std::vector<int>>& extract = compoundInfo.PieceExtractedConvex[iPiece];
+		PxConvexMeshGeometry convexGeometry = CookingConvex(piece, extract);
+		PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, convexGeometry, *gMaterial);
 
-			PxConvexMeshGeometry convexGeometry = CookingConvex(piece, extract);
-			PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, convexGeometry, *gMaterial);
+		std::vector<VertexNormalColor> vertexData;
+		std::vector<uint32_t> indexData;
 
-			std::vector<VertexNormalColor> vertexData;
-			std::vector<uint32_t> indexData;
+		if (TRUE == renderConvex)
+			Poly::RenderPolyhedron(vertexData, indexData, piece.Convex, extract, true);
+		else
+			Poly::RenderPolyhedron(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
 
-			if (TRUE == renderConvex)
-				Poly::RenderPolyhedron(vertexData, indexData, piece.Convex, extract, true);
-			else
-				Poly::RenderPolyhedron(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
-
-			DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
-			const int meshIndex = AddMesh(mesh);
-			bindMesh.push_back(meshIndex);
-		}
-
-		PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
-		gScene->addActor(*compoundRigidBody);
-
-		m_rigidVec.emplace_back(compoundRigidBody, bindMesh);
+		DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
+		meshes.push_back(mesh);
 	}
+
+	PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
+	gScene->addActor(*compoundRigidBody);
+
+	m_fractureStorage.CompoundVec.push_back(compound);
+	m_fractureStorage.RigidDynamicVec.push_back(compoundRigidBody);
+	m_fractureStorage.CompoundMeshVec.push_back(meshes);
+	m_structuredBufferData.resize(m_structuredBufferData.size() + meshes.size(), MeshSB(XMMatrixIdentity()));
 }
 
 PxConvexMeshGeometry Surtr::CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract)
@@ -2401,16 +2443,6 @@ PxConvexMeshGeometry Surtr::CookingConvexManual(const Poly::Polyhedron& polyhedr
 	PxConvexMesh* convexMesh = gPhysics->createConvexMesh(input);
 
 	return PxConvexMeshGeometry(convexMesh, PxMeshScale(), PxConvexMeshGeometryFlag::eTIGHT_BOUNDS);
-}
-
-int Surtr::AddMesh(MeshBase* mesh)
-{
-	m_meshVec.push_back(mesh);
-	m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
-
-	// #TODO : Re-Allocate If exceed limit.
-
-	return m_meshVec.size() - 1;
 }
 
 void Surtr::CreateTextureResource(

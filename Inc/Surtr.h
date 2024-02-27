@@ -97,6 +97,12 @@ private:
 		std::vector<std::set<int>>					CompoundBind;
 	};
 
+	struct Compound
+	{
+		std::vector<Piece>							PieceVec;
+		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
+	};
+
 	struct FractureResult
 	{
 		UINT                ICHFaceCnt = 0;
@@ -105,7 +111,10 @@ private:
 
 	struct FractureStorage
 	{
-		CompoundInfo					RecentCompound;
+		std::vector<Compound>					CompoundVec;
+		std::vector<physx::PxRigidDynamic*>		RigidDynamicVec;
+		std::vector<std::vector<MeshBase*>>		CompoundMeshVec;
+		
 		std::vector<VMACH::Polygon3D>	FracturePattern;
 		Vector3							BBCenter;
 		Vector3							MinBB;
@@ -129,10 +138,10 @@ private:
 	void OnDeviceLost();
 
 	// Core feature functions
-	void							PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
+	Compound						PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
 													_In_ const std::vector<uint32_t>& visualMeshIndices);
 	
-	void							DoFracture();
+	std::vector<Compound>			DoFracture(const Compound& targetCompound);
 
 	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit);
 	std::vector<Vector3>			GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit);
@@ -141,7 +150,7 @@ private:
 	std::vector<VMACH::Polygon3D>	GenerateVoronoi(_In_ const std::vector<Vector3>& cellPointVec);
 	std::vector<VMACH::Polygon3D>	GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean);
 
-	CompoundInfo					ApplyFracture(_In_ const CompoundInfo& preResult, 
+	CompoundInfo					ApplyFracture(_In_ const Compound& compound,
 												  _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
 												  _In_ const std::vector<Vector3>& spherePointCloud, 
 												  _In_ bool partial = false);
@@ -166,13 +175,11 @@ private:
 														  _In_ const Ray ray, 
 														  _Out_ float& dist);
 
-	void							InitCompound(const CompoundInfo& compoundInfo, bool renderConvex);
+	void							InitCompound(const Compound& compound, bool renderConvex);
 	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
 	// Helper functions
-	int								AddMesh(MeshBase* mesh);
-	
 	void							CreateTextureResource(_In_ const wchar_t* fileName,
 														  _Out_ ID3D12Resource** texture,
 														  _In_ ID3D12Resource** uploadHeap,
@@ -290,10 +297,8 @@ private:
 	// Meshes
 	UINT                                                m_modelIndex;
 	std::vector<Vector3>								m_spherePointCloud;
-
-	std::vector<MeshBase*>												m_meshVec;
-	std::vector<MeshSB>													m_meshMatrixVec;
-	std::vector<std::pair<physx::PxRigidActor*, std::vector<int>>>		m_rigidVec;
+	std::vector<MeshSB>									m_structuredBufferData;
+	physx::PxRigidActor*								m_targetRigidBody;
 
 	// Shadow
 	std::unique_ptr<ShadowMap>  			            m_shadowMap;
