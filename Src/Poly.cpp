@@ -577,6 +577,13 @@ void Poly::Scale(Polyhedron& polyhedron, const Vector3& v)
 		i.Position *= v;
 }
 
+void Poly::Transform(Polyhedron& polyhedron, const DirectX::XMMATRIX& matrix)
+{
+	const DirectX::XMMATRIX mat = XMMatrixTranspose(matrix);
+	for (Poly::Vertex& vert : polyhedron)
+		vert.Position = XMVector3TransformCoord(vert.Position, mat);
+}
+
 Poly::Polyhedron Poly::GetBB()
 {
 	std::vector<Vector3> points =

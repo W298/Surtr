@@ -80,8 +80,8 @@ private:
 		FLOAT		ImpactRadius = 1.0f;
 		FLOAT		FracturePatternDist = 0.01f;
 		bool		PartialFracture = true;
-		INT			InitialDecomposeCellCnt = 64;
-		INT			FracturePatternCellCnt = 64;
+		INT			InitialDecomposeCellCnt = 128;
+		INT			FracturePatternCellCnt = 128;
 	};
 
 	struct Piece
@@ -101,12 +101,11 @@ private:
 	{
 		UINT                ICHFaceCnt = 0;
 		UINT                ACHErrorPointCnt = 0;
-		CompoundInfo		RecentCompound;
 	};
 
 	struct FractureStorage
 	{
-		CompoundInfo					InitialCompound;
+		CompoundInfo					RecentCompound;
 		std::vector<VMACH::Polygon3D>	FracturePattern;
 		Vector3							BBCenter;
 		Vector3							MinBB;
@@ -115,7 +114,6 @@ private:
 	};
 
 	void Update(DX::StepTimer const& timer);
-	void UploadMesh();
 	void UploadStructuredBuffer();
 	void Render();
 
@@ -134,8 +132,7 @@ private:
 	void							PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
 													_In_ const std::vector<uint32_t>& visualMeshIndices);
 	
-	void							DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData,
-											   _Out_ std::vector<uint32_t>& fracturedIndexData);
+	void							DoFracture();
 
 	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit);
 	std::vector<Vector3>			GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit);
@@ -311,11 +308,9 @@ private:
 	bool												m_lightRotation;
 
 	// Feature parameters
-	bool                                                m_executeNextStep;
 	FractureArgs										m_fractureArgs;
 	FractureResult										m_fractureResult;
 	FractureStorage										m_fractureStorage;
-	std::vector<VMACH::Polygon3D>                       m_convexVec;
 
 	// WVP matrices
 	XMMATRIX											m_viewMatrix;

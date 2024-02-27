@@ -73,8 +73,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT mode
 	m_renderShadow = true;
 	m_lightRotation = false;
 
-	m_executeNextStep = false;
-
 	m_sceneBounds.Center = XMFLOAT3(0.0f, 0.0f, 0.0f);
 	m_sceneBounds.Radius = 100.0f;
 
@@ -185,26 +183,15 @@ void Surtr::OnMouseDown()
 	Vector3 rayDir = worldSpaceCoord - Vector3(m_camPosition);
 	rayDir.Normalize();
 
-	Ray ray(m_camPosition, rayDir);
+	const Vector3 camPosV3 = Vector3(m_camPosition);
 
-	bool hit = false;
-	float minDist = std::numeric_limits<float>::max();
+	PxVec3 origin(camPosV3.x, camPosV3.y, camPosV3.z);
+	PxVec3 direction(rayDir.x, rayDir.y, rayDir.z);
+	PxReal maxDistance = 1000;
+	PxRaycastBuffer hit;
 
-	for (const VMACH::Polygon3D& convex : m_convexVec)
-	{
-		float dist;
-		if (TRUE == ConvexRayIntersection(convex, ray, dist))
-		{
-			if (dist < minDist)
-			{
-				hit = true;
-				minDist = dist;
-			}
-		}
-	}
-
-	if (TRUE == hit)
-		m_fractureArgs.ImpactPosition = ray.position + ray.direction * (minDist + 0.01);
+	if (TRUE == gScene->raycast(origin, direction, maxDistance, hit))
+		m_fractureArgs.ImpactPosition = Vector3(hit.block.position.x, hit.block.position.y, hit.block.position.z);
 }
 
 // Updates the world.
@@ -311,20 +298,6 @@ void Surtr::Update(DX::StepTimer const& timer)
 	}
 }
 
-void Surtr::UploadMesh()
-{
-	if (m_executeNextStep)
-	{
-		std::vector<VertexNormalColor> fracturedVertexData;
-		std::vector<uint32_t> fracturedIndexData;
-		DoFracture(fracturedVertexData, fracturedIndexData);
-		
-		UpdateDynamicMesh((DynamicMesh*)m_meshVec[2], fracturedVertexData, fracturedIndexData);
-
-		m_executeNextStep = false;
-	}
-}
-
 void Surtr::UploadStructuredBuffer()
 {
 	CD3DX12_RANGE readRange(0, 0);
@@ -350,7 +323,6 @@ void Surtr::Render()
 	DX::ThrowIfFailed(m_commandAllocators[m_backBufferIndex]->Reset());
 	DX::ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_backBufferIndex].Get(), nullptr));
 
-	UploadMesh();
 	UploadStructuredBuffer();
 
 	// Set root signature & descriptor table.
@@ -542,19 +514,38 @@ void Surtr::Render()
 
 					ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-					if (ImGui::Button("Regenerate!"))
-						m_executeNextStep = true;
-
-					ImGui::Dummy(ImVec2(0.0f, 10.0f));
-
 					if (ImGui::Button("Simulate!"))
 					{
 						TIMER_INIT;
-						TIMER_START;
+						TIMER_START_NAME(L"Clean-up Previous Results\t\t");
 
-						InitCompound(m_fractureResult.RecentCompound, false);
+						for (int i = 1; i < m_rigidVec.size(); i++)
+							gScene->removeActor(*m_rigidVec[i].first);
+
+						m_rigidVec.resize(1);
+
+						for (int i = 1; i < m_meshMatrixVec.size(); i++)
+						{
+							Poly::Transform(m_fractureStorage.RecentCompound.PieceVec[i - 1].Convex, m_meshMatrixVec[i].WorldMatrix);
+							Poly::Transform(m_fractureStorage.RecentCompound.PieceVec[i - 1].Mesh, m_meshMatrixVec[i].WorldMatrix);
+						}
+
+						m_meshVec.resize(1);
+						m_meshMatrixVec.resize(1);
 
 						TIMER_STOP_PRINT;
+
+						DoFracture();
+						InitCompound(m_fractureStorage.RecentCompound, false);
+
+						for (int i = 1; i < m_rigidVec.size(); i++)
+						{
+							if (m_rigidVec[i].first->is<PxRigidStatic>())
+								continue;
+
+							PxVec3 pos(m_fractureArgs.ImpactPosition.x, m_fractureArgs.ImpactPosition.y, m_fractureArgs.ImpactPosition.z);
+							PxRigidBodyExt::addForceAtPos(*(PxRigidDynamic*)(m_rigidVec[i].first), PxVec3(2, 0, 0), pos);
+						}
 					}
 
 					ImGui::Text("[Results]");
@@ -574,34 +565,6 @@ void Surtr::Render()
 
 					ImGui::Checkbox("Rotate Light", &m_lightRotation);
 					ImGui::Checkbox("Render Shadow", &m_renderShadow);
-
-					ImGui::Dummy(ImVec2(0.0f, 10.0f));
-
-					ImGui::Text("Object Render Mode");
-					if (ImGui::Button("NOT_RENDER"))
-						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
-					ImGui::SameLine();
-					if (ImGui::Button("SOLID"))
-						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::SOLID;
-					ImGui::SameLine();
-					if (ImGui::Button("WIREFRAME"))
-						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::WIREFRAME;
-					ImGui::SameLine();
-					if (ImGui::Button("BOTH"))
-						m_meshVec[0]->RenderOption = StaticMesh::RenderOptionType::SOLID | StaticMesh::RenderOptionType::WIREFRAME;
-
-					ImGui::Text("Convex Render Mode");
-					if (ImGui::Button("_NOT_RENDER"))
-						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
-					ImGui::SameLine();
-					if (ImGui::Button("_SOLID"))
-						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::SOLID;
-					ImGui::SameLine();
-					if (ImGui::Button("_WIREFRAME"))
-						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::WIREFRAME;
-					ImGui::SameLine();
-					if (ImGui::Button("_BOTH"))
-						m_meshVec[2]->RenderOption = StaticMesh::RenderOptionType::SOLID | StaticMesh::RenderOptionType::WIREFRAME;
 
 					ImGui::Dummy(ImVec2(0.0f, 20.0f));
 
@@ -1416,42 +1379,25 @@ void Surtr::CreateCommandListDependentResources()
 		std::transform(sphv.begin(), sphv.end(), m_spherePointCloud.begin(), [](const VertexNormalColor& vnc) { return vnc.Position; });
 	}
 
-	// Fracturing.
+	// Set ground rigidbody.
 	{
-		{
-			StaticMesh* objectMesh = PrepareMeshResource(objectVertexData, objectIndexData);
-			objectMesh->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
-			
-			const int meshIndex = AddMesh(objectMesh);
-			m_rigidVec.emplace_back(nullptr, std::vector<int> { (int)meshIndex });
-		}
+		std::vector<VertexNormalColor> groundVertexData;
+		std::vector<uint32_t> groundIndexData;
+		LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, 0, 0), groundVertexData, groundIndexData);
 
-		{
-			std::vector<VertexNormalColor> groundVertexData;
-			std::vector<uint32_t> groundIndexData;
-			LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, 0, 0), groundVertexData, groundIndexData);
+		StaticMesh* groundMesh = PrepareMeshResource(groundVertexData, groundIndexData);
 
-			StaticMesh* groundMesh = PrepareMeshResource(groundVertexData, groundIndexData);
-			
-			PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 2), *gMaterial);
-			gScene->addActor(*groundRigidBody);
+		PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 2), *gMaterial);
+		gScene->addActor(*groundRigidBody);
 
-			const int meshIndex = AddMesh(groundMesh);
-			m_rigidVec.emplace_back(groundRigidBody, std::vector<int> { (int)meshIndex });
-		}
+		const int meshIndex = AddMesh(groundMesh);
+		m_rigidVec.emplace_back(groundRigidBody, std::vector<int> { (int)meshIndex });
+	}
 
-		{
-			std::vector<VertexNormalColor> fracturedVertexData;
-			std::vector<uint32_t> fracturedIndexData;
-
-			PrepareFracture(objectVertexData, objectIndexData);
-			DoFracture(fracturedVertexData, fracturedIndexData);
-
-			DynamicMesh* fractureMesh = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
-			
-			const int meshIndex = AddMesh(fractureMesh);
-			m_rigidVec.emplace_back(nullptr, std::vector<int> { (int)meshIndex });
-		}
+	// Set initial compound.
+	{
+		PrepareFracture(objectVertexData, objectIndexData);
+		InitCompound(m_fractureStorage.RecentCompound, false);
 	}
 
 	// Upload structured data.
@@ -1691,37 +1637,21 @@ void Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMes
 
 	// 10. Generate initial pieces.
 	CompoundInfo preCompound = CompoundInfo({ Piece(achPolyhedron, meshPolyhedron) }, { Poly::ExtractFaces(achPolyhedron) }, { { 0 } });
-	m_fractureStorage.InitialCompound = ApplyFracture(preCompound, voroPolyVec, m_spherePointCloud);
+	CompoundInfo initial = ApplyFracture(preCompound, voroPolyVec, m_spherePointCloud);
 	
-	Refitting(m_fractureStorage.InitialCompound.PieceVec);
-	SetExtract(m_fractureStorage.InitialCompound);
+	Refitting(initial.PieceVec);
+	SetExtract(initial);
 
-	// For Collision-Ray.
-	for (int p = 0; p < m_fractureStorage.InitialCompound.PieceVec.size(); p++)
-	{
-		const auto& faceVec = m_fractureStorage.InitialCompound.PieceExtractedConvex[p];
-
-		VMACH::Polygon3D polygon3D = { true };
-		for (const auto& faceIndex : faceVec)
-		{
-			VMACH::PolygonFace f = { true };
-			for (int j = 0; j < faceIndex.size(); j++)
-				f.AddVertex(m_fractureStorage.InitialCompound.PieceVec[p].Convex[faceIndex[j]].Position);
-
-			polygon3D.AddFace(f);
-		}
-
-		m_convexVec.push_back(polygon3D);
-	}
+	for (int comp = 1; comp < initial.CompoundBind.size(); comp++)
+		initial.CompoundBind[0].insert(initial.CompoundBind[comp].begin(), initial.CompoundBind[comp].end());
+	
+	initial.CompoundBind.resize(1);
+	m_fractureStorage.RecentCompound = initial;
 }
 
-void Surtr::DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData,
-					   _Out_ std::vector<uint32_t>& fracturedIndexData)
+void Surtr::DoFracture()
 {
-	fracturedVertexData = std::vector<VertexNormalColor>();
-	fracturedIndexData = std::vector<uint32_t>();
-
-	std::vector<VMACH::Polygon3D> localFracturePattern = GenerateFracturePattern(m_fractureArgs.FracturePatternCellCnt, m_fractureArgs.FracturePatternDist);
+	std::vector<VMACH::Polygon3D> localFracturePattern = m_fractureStorage.FracturePattern;
 	std::vector<Vector3> localSpherePointCloud = m_spherePointCloud;
 
 	// Scale.
@@ -1739,19 +1669,11 @@ void Surtr::DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData
 		v += m_fractureArgs.ImpactPosition;
 	}
 
-	// Render impact point.
-	{
-		VMACH::Polygon3D boxPoly = VMACH::GetBoxPolygon();
-		boxPoly.Scale(0.05);
-		boxPoly.Translate(m_fractureArgs.ImpactPosition);
-		boxPoly.Render(fracturedVertexData, fracturedIndexData, Vector3(1, 0, 0));
-	}
-
 	TIMER_INIT;
 	TIMER_START_NAME(L"ApplyFracture\t\t");
 
 	// 11. Apply fracture pattern.
-	CompoundInfo second = ApplyFracture(m_fractureStorage.InitialCompound, 
+	CompoundInfo second = ApplyFracture(m_fractureStorage.RecentCompound, 
 										localFracturePattern, 
 										localSpherePointCloud, 
 										m_fractureArgs.PartialFracture);
@@ -1776,24 +1698,7 @@ void Surtr::DoFracture(_Out_ std::vector<VertexNormalColor>& fracturedVertexData
 
 	TIMER_STOP_PRINT;
 
-	m_fractureResult.RecentCompound = second;
-
-	// Render Loop
-	for (int l = 0; l < second.CompoundBind.size(); l++)
-	{
-		double a, b, c;
-		a = rnd(); b = rnd(); c = rnd();
-		XMFLOAT3 color(a, b, c);
-		
-		if (l == 0)
-			color = XMFLOAT3(1, 0.5f, 0);
-
-		for (const int i : second.CompoundBind[l])
-		{
-			//Poly::RenderPolyhedron(achVertexData, achIndexData, second.PieceVec[i].Convex, false, color);
-			Poly::RenderPolyhedron(fracturedVertexData, fracturedIndexData, second.PieceVec[i].Mesh, Poly::ExtractFaces(second.PieceVec[i].Mesh), false, color);
-		}
-	}
+	m_fractureStorage.RecentCompound = second;
 }
 
 std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit)
@@ -2431,11 +2336,6 @@ PxConvexMeshGeometry Surtr::CookingConvex(const Piece& piece, const std::vector<
 	PxTolerancesScale scale;
 	PxCookingParams params(scale);
 	params.planeTolerance = 0.000007f;
-
-#ifdef _DEBUG
-	bool res = PxValidateConvexMesh(params, convexDesc);
-	PX_ASSERT(res);
-#endif
 
 	PxConvexMesh* convexMesh = PxCreateConvexMesh(params, convexDesc, gPhysics->getPhysicsInsertionCallback());
 	

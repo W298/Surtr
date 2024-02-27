@@ -41,6 +41,7 @@ Polyhedron						ClipPolyhedron(const Polyhedron& polyhedron, const VMACH::Polygo
 
 void							Translate(Polyhedron& polyhedron, const Vector3& v);
 void							Scale(Polyhedron& polyhedron, const Vector3& v);
+void							Transform(Polyhedron& polyhedron, const DirectX::XMMATRIX& matrix);
 
 // Helper function.
 Polyhedron						GetBB();
