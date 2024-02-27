@@ -547,16 +547,12 @@ void Surtr::Render()
 
 					ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-					if (ImGui::Button("Add Cube"))
+					if (ImGui::Button("Simulate!"))
 					{
 						TIMER_INIT;
 						TIMER_START;
-						
-						/*for (int i = 0; i < m_fractureStorage.InitialCompound.PieceVec.size(); i++)
-							AddPiece(m_fractureStorage.InitialCompound.PieceVec[i], m_fractureStorage.InitialCompound.PieceExtractedConvex[i], false);*/
-						
-						for (int i = 0; i < m_fractureResult.RecentCompound.PieceVec.size(); i++)
-							CookingConvex(m_fractureResult.RecentCompound.PieceVec[i], m_fractureResult.RecentCompound.PieceExtractedConvex[i], false);
+
+						InitCompound(m_fractureResult.RecentCompound, false);
 
 						TIMER_STOP_PRINT;
 					}
@@ -1423,10 +1419,11 @@ void Surtr::CreateCommandListDependentResources()
 	// Fracturing.
 	{
 		{
-			StaticMesh* objectModel = PrepareMeshResource(objectVertexData, objectIndexData);
-			objectModel->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
+			StaticMesh* objectMesh = PrepareMeshResource(objectVertexData, objectIndexData);
+			objectMesh->RenderOption = StaticMesh::RenderOptionType::NOT_RENDER;
 			
-			AddMesh(objectModel, nullptr);
+			const int meshIndex = AddMesh(objectMesh);
+			m_rigidVec.emplace_back(nullptr, std::vector<int> { (int)meshIndex });
 		}
 
 		{
@@ -1434,12 +1431,13 @@ void Surtr::CreateCommandListDependentResources()
 			std::vector<uint32_t> groundIndexData;
 			LoadModelData("Resources\\Models\\ground.obj", XMFLOAT3(0.015f, 0.015f, 0.015f), XMFLOAT3(0, 0, 0), groundVertexData, groundIndexData);
 
-			StaticMesh* groundModel = PrepareMeshResource(groundVertexData, groundIndexData);
+			StaticMesh* groundMesh = PrepareMeshResource(groundVertexData, groundIndexData);
 			
 			PxRigidStatic* groundRigidBody = PxCreatePlane(*gPhysics, PxPlane(0, 1, 0, 2), *gMaterial);
 			gScene->addActor(*groundRigidBody);
 
-			AddMesh(groundModel, groundRigidBody);
+			const int meshIndex = AddMesh(groundMesh);
+			m_rigidVec.emplace_back(groundRigidBody, std::vector<int> { (int)meshIndex });
 		}
 
 		{
@@ -1449,9 +1447,10 @@ void Surtr::CreateCommandListDependentResources()
 			PrepareFracture(objectVertexData, objectIndexData);
 			DoFracture(fracturedVertexData, fracturedIndexData);
 
-			DynamicMesh* fractureModel = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
+			DynamicMesh* fractureMesh = PrepareDynamicMeshResource(fracturedVertexData, fracturedIndexData);
 			
-			AddMesh(fractureModel, nullptr);
+			const int meshIndex = AddMesh(fractureMesh);
+			m_rigidVec.emplace_back(nullptr, std::vector<int> { (int)meshIndex });
 		}
 	}
 
@@ -2289,7 +2288,7 @@ void Surtr::Refitting(_Inout_ std::vector<Piece>& targetPieceVec)
 
 	for (Piece& c : targetPieceVec)
 	{
-		Kdop::KdopContainer kdop(GenerateICHNormal(c.Mesh, std::min((int)c.Mesh.size(), 6)));
+		Kdop::KdopContainer kdop(GenerateICHNormal(c.Mesh, std::min((int)c.Mesh.size(), 10)));
 		kdop.Calc(c.Mesh);
 
 		c.Convex = kdop.ClipWithPolyhedron(c.Convex);
@@ -2380,28 +2379,39 @@ bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ cons
 	return hit;
 }
 
-void Surtr::InitCompound(const CompoundInfo& compoundInfo)
+void Surtr::InitCompound(const CompoundInfo& compoundInfo, bool renderConvex)
 {
-	for (const auto& compound : m_fractureResult.RecentCompound.CompoundBind)
+	for (const auto& compound : compoundInfo.CompoundBind)
 	{
 		PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(PxVec3(0, 0, 0)));
 
+		std::vector<int> bindMesh;
 		for (const int iPiece : compound)
 		{
-			PxConvexMeshGeometry convexGeometry = CookingConvex(m_fractureResult.RecentCompound.PieceVec[iPiece], m_fractureResult.RecentCompound.PieceExtractedConvex[iPiece]);
+			const Piece& piece = compoundInfo.PieceVec[iPiece];
+			const std::vector<std::vector<int>>& extract = compoundInfo.PieceExtractedConvex[iPiece];
+
+			PxConvexMeshGeometry convexGeometry = CookingConvex(piece, extract);
 			PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, convexGeometry, *gMaterial);
+
+			std::vector<VertexNormalColor> vertexData;
+			std::vector<uint32_t> indexData;
+
+			if (TRUE == renderConvex)
+				Poly::RenderPolyhedron(vertexData, indexData, piece.Convex, extract, true);
+			else
+				Poly::RenderPolyhedron(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
+
+			DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
+			const int meshIndex = AddMesh(mesh);
+			bindMesh.push_back(meshIndex);
 		}
 
 		PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
 		gScene->addActor(*compoundRigidBody);
+
+		m_rigidVec.emplace_back(compoundRigidBody, bindMesh);
 	}
-
-	std::vector<VertexNormalColor> vertexData;
-	std::vector<uint32_t> indexData;
-
-	Poly::RenderPolyhedron(vertexData, indexData, renderConvex ? piece.Convex : piece.Mesh, renderConvex ? extract : Poly::ExtractFaces(piece.Mesh), true);
-	DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData);
-	AddMesh(mesh, convexRigidBody);
 }
 
 PxConvexMeshGeometry Surtr::CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract)
@@ -2493,26 +2503,14 @@ PxConvexMeshGeometry Surtr::CookingConvexManual(const Poly::Polyhedron& polyhedr
 	return PxConvexMeshGeometry(convexMesh, PxMeshScale(), PxConvexMeshGeometryFlag::eTIGHT_BOUNDS);
 }
 
-void Surtr::AddMesh(MeshBase* mesh, physx::PxRigidActor* rigidBody)
+int Surtr::AddMesh(MeshBase* mesh)
 {
-	int meshIndex = m_meshVec.size();
 	m_meshVec.push_back(mesh);
 	m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
-
-	m_rigidVec.emplace_back(rigidBody, std::vector<int> { (int)meshIndex });
 
 	// #TODO : Re-Allocate If exceed limit.
-}
 
-void Surtr::AddMesh(MeshBase* mesh, int rigidBodyIndex)
-{
-	int meshIndex = m_meshVec.size();
-	m_meshVec.push_back(mesh);
-	m_meshMatrixVec.push_back(MeshSB(XMMatrixIdentity()));
-
-	m_rigidVec[rigidBodyIndex].second.push_back(meshIndex);
-
-	// #TODO : Re-Allocate If exceed limit.s
+	return m_meshVec.size() - 1;
 }
 
 void Surtr::CreateTextureResource(

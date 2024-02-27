@@ -169,13 +169,12 @@ private:
 														  _In_ const Ray ray, 
 														  _Out_ float& dist);
 
-	void							InitCompound(const CompoundInfo& compoundInfo);
+	void							InitCompound(const CompoundInfo& compoundInfo, bool renderConvex);
 	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
 	// Helper functions
-	void							AddMesh(MeshBase* mesh, physx::PxRigidActor* rigidBody);
-	void							AddMesh(MeshBase* mesh, int rigidBodyIndex);
+	int								AddMesh(MeshBase* mesh);
 	
 	void							CreateTextureResource(_In_ const wchar_t* fileName,
 														  _Out_ ID3D12Resource** texture,
@@ -224,7 +223,7 @@ private:
 	static constexpr UINT                               c_swapBufferCount		= 3;
 	
 	// #TODO : Currently set count as constant.
-	static constexpr UINT								c_nSBCnt				= 200;
+	static constexpr UINT								c_nSBCnt				= 1000;
 
 	// Back buffer index
 	UINT                                                m_backBufferIndex;
