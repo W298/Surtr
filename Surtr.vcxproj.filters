@@ -96,6 +96,12 @@
     <ClInclude Include="Inc\Kdop.h">
       <Filter>Inc</Filter>
     </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\thread_safe_queue.h">
+      <Filter>ThirdParty\Src</Filter>
+    </ClInclude>
+    <ClInclude Include="ThirdParty\Inc\thread_pool.h">
+      <Filter>ThirdParty\Src</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />

@@ -69,7 +69,7 @@ struct StaticMesh : public MeshBase
 	size_t											    VBSize;
 	size_t											    IBSize;
 
-	StaticMesh() : VBSize(0), IBSize(0) {}
+	StaticMesh() : MeshBase(), VBSize(0), IBSize(0) {}
 
 	StaticMesh(const std::vector<VertexNormalColor>& vertexData, const std::vector<uint32_t>& indexData) :
 		MeshBase(vertexData, indexData),
@@ -90,7 +90,7 @@ struct DynamicMesh : public MeshBase
 	size_t											    AllocatedVBSize;
 	size_t											    AllocatedIBSize;
 
-	DynamicMesh() : RenderVBSize(0), RenderIBSize(0), AllocatedVBSize(0), AllocatedIBSize(0) {}
+	DynamicMesh() : MeshBase(), RenderVBSize(0), RenderIBSize(0), AllocatedVBSize(0), AllocatedIBSize(0) {}
 	
 	DynamicMesh(const std::vector<VertexNormalColor>& vertexData, const std::vector<uint32_t>& indexData) :
 		MeshBase(vertexData, indexData),
@@ -178,6 +178,17 @@ struct DynamicMesh : public MeshBase
 		DX::ThrowIfFailed(IB->Map(0, &readRange, reinterpret_cast<void**>(&indexDataBegin)));
 		memcpy(indexDataBegin, IndexData.data(), RenderIBSize);
 		IB->Unmap(0, nullptr);
+	}
+
+	void Clean()
+	{
+		VertexData.clear();
+		IndexData.clear();
+		VertexCount = 0;
+		IndexCount = 0;
+		
+		RenderVBSize = 0;
+		RenderIBSize = 0;
 	}
 
 	void UpdateMeshData(const std::vector<VertexNormalColor>& vertexData, const std::vector<uint32_t>& indexData)

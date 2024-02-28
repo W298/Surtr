@@ -133,6 +133,8 @@
     <ClInclude Include="ThirdParty\Inc\ReadData.h" />
     <ClInclude Include="ThirdParty\Inc\SimpleMath.h" />
     <ClInclude Include="ThirdParty\Inc\StepTimer.h" />
+    <ClInclude Include="ThirdParty\Inc\thread_pool.h" />
+    <ClInclude Include="ThirdParty\Inc\thread_safe_queue.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />

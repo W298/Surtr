@@ -771,16 +771,8 @@ std::vector<int> Poly::EarClipping(const Polyhedron& polyhedron, const std::vect
 		bool        IsReflex;
 	};
 
-	const int N = face.size();
-
-	const Vector3 a = polyhedron[face[0]].Position;
-	const Vector3 b = polyhedron[face[1]].Position;
-	const Vector3 c = polyhedron[face[2]].Position;
-	Vector3 normal = (b - a).Cross(c - a);
-	if (TRUE == IsCCW(polyhedron, face, normal))
-		normal = -normal;
-
 	std::vector<int> triangles;
+	const int N = face.size();
 
 	if (N <= 2)
 		return triangles;
@@ -791,6 +783,13 @@ std::vector<int> Poly::EarClipping(const Polyhedron& polyhedron, const std::vect
 		triangles = { 0, 1, 2 };
 		return triangles;
 	}
+
+	const Vector3 a = polyhedron[face[0]].Position;
+	const Vector3 b = polyhedron[face[1]].Position;
+	const Vector3 c = polyhedron[face[2]].Position;
+	Vector3 normal = (b - a).Cross(c - a);
+	if (TRUE == IsCCW(polyhedron, face, normal))
+		normal = -normal;
 
 	std::vector<VertexNode> vertices(N);
 

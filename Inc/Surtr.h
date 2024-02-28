@@ -8,6 +8,7 @@
 #include "VMACH.h"
 #include "Poly.h"
 #include "Kdop.h"
+#include "thread_pool.h"
 
 using namespace DirectX;
 using DirectX::SimpleMath::Vector3;
@@ -75,16 +76,17 @@ private:
 	{
 		INT			ICHIncludePointLimit = 20;
 		FLOAT		ACHPlaneGapInverse = 2000.0f;
-		
+		INT			RefittingPointLimit = 8;
+
 		INT			Seed = 46354;
-		
+
 		XMFLOAT3	ImpactPosition;
 		FLOAT		ImpactRadius = 1.0f;
 
 		bool		PartialFracture = true;
 		FLOAT		PartialFracturePatternDist = 0.02f;
 		FLOAT		GeneralFracturePatternDist = 1.0f;
-		
+
 		INT			InitialDecomposeCellCnt = 64;
 		INT			PartialFracturePatternCellCnt = 128;
 		INT			GeneralFracturePatternCellCnt = 1024;
@@ -117,13 +119,13 @@ private:
 
 	struct FractureStorage
 	{
-		std::vector<Compound>					CompoundVec;
-		std::vector<physx::PxRigidDynamic*>		RigidDynamicVec;
-		std::vector<std::vector<MeshBase*>>		CompoundMeshVec;
-		
+		std::vector<Compound>						CompoundVec;
+		std::vector<physx::PxRigidDynamic*>			RigidDynamicVec;
+		std::vector<std::vector<DynamicMesh*>>		CompoundMeshVec;
+
 		std::vector<VMACH::Polygon3D>			PartialFracturePattern;
 		std::vector<VMACH::Polygon3D>			GeneralFracturePattern;
-		
+
 		Vector3									BBCenter;
 		Vector3									MinBB;
 		Vector3									MaxBB;
@@ -151,37 +153,37 @@ private:
 	
 	std::vector<Compound>			DoFracture(const Compound& targetCompound);
 
-	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit);
-	std::vector<Vector3>			GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit);
+	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit) const;
+	std::vector<Vector3>			GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit) const;
 
-	std::vector<VMACH::Polygon3D>	GenerateVoronoi(_In_ const int cellCount);
-	std::vector<VMACH::Polygon3D>	GenerateVoronoi(_In_ const std::vector<Vector3>& cellPointVec);
-	std::vector<VMACH::Polygon3D>	GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean);
+	std::vector<VMACH::Polygon3D>	GenerateVoronoi(_In_ const int cellCount) const;
+	std::vector<VMACH::Polygon3D>	GenerateVoronoi(_In_ const std::vector<Vector3>& cellPointVec) const;
+	std::vector<VMACH::Polygon3D>	GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean) const;
 
 	CompoundInfo					ApplyFracture(_In_ const Compound& compound,
 												  _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
 												  _In_ const std::vector<Vector3>& spherePointCloud, 
-												  _In_ bool partial = false);
+												  _In_ bool partial = false) const;
 
-	void							SetExtract(_Inout_ CompoundInfo& preResult);
+	void							SetExtract(_Inout_ CompoundInfo& preResult) const;
 
-	void							_MeshIslandLoop(const int index, const Poly::Polyhedron& mesh, std::set<int>& group);
-	std::vector<std::set<int>>		CheckMeshIsland(_In_ const Poly::Polyhedron& polyhedron);
+	void							_MeshIslandLoop(const int index, const Poly::Polyhedron& mesh, std::set<int>& group) const;
+	std::vector<std::set<int>>		CheckMeshIsland(_In_ const Poly::Polyhedron& polyhedron) const;
 
-	void							HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo);
-	void							MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud);
-	void							Refitting(_Inout_ std::vector<Piece>& targetPieceVec);
+	void							HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo) const;
+	void							MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud) const;
+	void							Refitting(_Inout_ std::vector<Piece>& targetPieceVec) const;
 
 	// Utility
 	bool							ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 													  _In_ const std::vector<std::vector<int>>& extract,
 													  _In_ const std::vector<Vector3>& spherePointCloud,
 													  _In_ const Vector3 origin,
-													  _In_ const float radius);
+													  _In_ const float radius) const;
 
 	bool							ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, 
 														  _In_ const Ray ray, 
-														  _Out_ float& dist);
+														  _Out_ float& dist) const;
 
 	void							InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate = physx::PxVec3(0, 0, 0));
 	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
@@ -237,6 +239,13 @@ private:
 	
 	// #TODO : Currently set count as constant.
 	static constexpr UINT								c_nSBCnt				= 5000;
+	static constexpr UINT								c_nDynamicMeshPoolCnt	= 500;
+
+	std::function<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>(const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex)> m_initCompoundTask;
+	std::function<Piece(const Piece& piece)> m_refittingTask;
+
+	// Memory Pools
+	std::queue<DynamicMesh*>							m_dynamicMeshPool;
 
 	// Back buffer index
 	UINT                                                m_backBufferIndex;
@@ -308,8 +317,6 @@ private:
 	std::vector<Vector3>								m_spherePointCloud;
 	std::vector<MeshSB>									m_structuredBufferData;
 	physx::PxRigidActor*								m_targetRigidBody;
-
-	std::queue<DynamicMesh*>							m_dynamicMeshPool;
 
 	DynamicMesh*										m_debugMesh;
 	StaticMesh*											m_groundMesh;

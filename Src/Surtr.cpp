@@ -24,6 +24,8 @@ static PxScene*						gScene				= NULL;
 static PxMaterial*					gMaterial			= NULL;
 static PxPvd*						gPvd				= NULL;
 
+dp::thread_pool g_threadPool(8);
+
 Surtr::Surtr() noexcept :
 	m_window(nullptr),
 	m_outputWidth(1280),
@@ -53,6 +55,13 @@ static XMMATRIX PxMatToXMMATRIX(PxMat44 mat)
 					   mat.column1.x, mat.column1.y, mat.column1.z, mat.column1.w,
 					   mat.column2.x, mat.column2.y, mat.column2.z, mat.column2.w,
 					   mat.column3.x, mat.column3.y, mat.column3.z, mat.column3.w);
+}
+
+int work(int t, int id)
+{
+	printf("%d start \n", id);
+	std::this_thread::sleep_for(std::chrono::seconds(t));
+	return t + id;
 }
 
 // Initialize the Direct3D resources required to run.
@@ -101,21 +110,6 @@ void Surtr::InitializeD3DResources(HWND window, int width, int height, UINT mode
 	CreateDeviceResources();
 	CreateDeviceDependentResources();
 	CreateWindowSizeDependentResources();
-
-	//#TODO: Mesh Pool.
-	for (int i = 0; i < 500; i++)
-	{
-		DynamicMesh* mesh = new DynamicMesh();
-
-		mesh->AllocatedVBSize = sizeof(VertexNormalColor) * 10000;
-		mesh->AllocatedIBSize = sizeof(uint32_t) * 10000;
-
-		mesh->AllocateVB(m_d3dDevice.Get());
-		mesh->AllocateIB(m_d3dDevice.Get());
-
-		m_dynamicMeshPool.push(mesh);
-	}
-
 	CreateCommandListDependentResources();
 
 	// Fixed timestep for simulation.
@@ -214,7 +208,7 @@ void Surtr::OnMouseDown()
 		if (itr != m_fractureStorage.RigidDynamicVec.end())
 		{
 			int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
-			std::vector<MeshBase*>& meshVec = m_fractureStorage.CompoundMeshVec[targetIndex];
+			std::vector<DynamicMesh*>& meshVec = m_fractureStorage.CompoundMeshVec[targetIndex];
 
 			for (MeshBase* mesh : meshVec)
 			{
@@ -589,13 +583,21 @@ void Surtr::Render()
 
 							gScene->removeActor(*m_targetRigidBody);
 							m_fractureStorage.RigidDynamicVec.erase(std::next(m_fractureStorage.RigidDynamicVec.begin(), targetIndex));
+
+							// Re-cycle mesh buffer.
+							for (DynamicMesh* mesh : m_fractureStorage.CompoundMeshVec[targetIndex])
+							{
+								mesh->Clean();
+								m_dynamicMeshPool.push(mesh);
+							}
 							m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
+							
 							m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
 							m_structuredBufferData.erase(std::next(m_structuredBufferData.begin(), startID), std::next(m_structuredBufferData.begin(), endID + 1));
 							
 							TIMER_INIT;
-							TIMER_START_NAME(L"Allocation\t\t");
-							
+							TIMER_START_NAME(L"InitCompound\t\t");
+
 							for (Compound& compound : fracturedCompoundVec)
 								InitCompound(compound, false);
 
@@ -1426,6 +1428,41 @@ void Surtr::CreateCommandListDependentResources()
 		break;
 	}
 
+	// Allocate Dynamic Mesh Pool.
+	for (int i = 0; i < c_nDynamicMeshPoolCnt; i++)
+	{
+		DynamicMesh* mesh = new DynamicMesh();
+
+		mesh->AllocatedVBSize = sizeof(VertexNormalColor) * objectVertexData.size();
+		mesh->AllocatedIBSize = sizeof(uint32_t) * objectIndexData.size();
+
+		mesh->AllocateVB(m_d3dDevice.Get());
+		mesh->AllocateIB(m_d3dDevice.Get());
+
+		m_dynamicMeshPool.push(mesh);
+	}
+
+	m_initCompoundTask = [this](const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex) -> std::pair<PxConvexMeshGeometry, DynamicMesh*>
+	{
+		std::vector<VertexNormalColor> vertexData;
+		std::vector<uint32_t> indexData;
+
+		if (TRUE == renderConvex)
+			Poly::RenderPolyhedron(vertexData, indexData, piece.Convex, extract, true);
+		else
+			Poly::RenderPolyhedron(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
+
+		return std::make_pair(CookingConvex(piece, extract), PrepareDynamicMeshResource(vertexData, indexData, true));
+	};
+
+	m_refittingTask = [this](const Piece& piece) -> Piece
+	{
+		Kdop::KdopContainer kdop(GenerateICHNormal(piece.Mesh, std::min((int)piece.Mesh.size(), m_fractureArgs.RefittingPointLimit)));
+		kdop.Calc(piece.Mesh);
+
+		return Piece(kdop.ClipWithPolyhedron(piece.Convex), piece.Mesh);
+	};
+
 	// Sphere point cloud.
 	{
 		std::vector<VertexNormalColor> sphv;
@@ -1588,6 +1625,13 @@ void Surtr::OnDeviceLost()
 	for (auto& meshes : m_fractureStorage.CompoundMeshVec)
 		for (MeshBase* mesh : meshes)
 			delete mesh;
+
+	// Dyanmic mesh pools.
+	while (FALSE == m_dynamicMeshPool.empty())
+	{
+		delete m_dynamicMeshPool.front();
+		m_dynamicMeshPool.pop();
+	}
 
 	// Textures
 	m_colorLTexResource.Reset();
@@ -1797,7 +1841,7 @@ std::vector<Surtr::Compound> Surtr::DoFracture(const Compound& targetCompound)
 	return result;
 }
 
-std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit)
+std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit) const
 {
 	VMACH::ConvexHull ich(vertices, ichIncludePointLimit);
 
@@ -1812,7 +1856,7 @@ std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const std::vector<Vector3>& v
 	return ichFaceNormalVec;
 }
 
-std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit)
+std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const Poly::Polyhedron& polyhedron, _In_ const int ichIncludePointLimit) const
 {
 	std::vector<Vector3> vertices(polyhedron.size());
 	std::transform(polyhedron.begin(), polyhedron.end(), vertices.begin(), [](const Poly::Vertex& vert) { return vert.Position; });
@@ -1820,7 +1864,7 @@ std::vector<Vector3> Surtr::GenerateICHNormal(_In_ const Poly::Polyhedron& polyh
 	return GenerateICHNormal(vertices, ichIncludePointLimit);
 }
 
-std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount)
+std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount) const
 {
 	std::vector<Vector3> cellPointVec;
 
@@ -1839,7 +1883,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const int cellCount)
 	return GenerateVoronoi(cellPointVec);
 }
 
-std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const std::vector<Vector3>& cellPointVec)
+std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const std::vector<Vector3>& cellPointVec) const
 {
 	std::vector<VMACH::Polygon3D> voroPolyVec;
 
@@ -1908,7 +1952,7 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateVoronoi(_In_ const std::vector<Vect
 	return voroPolyVec;
 }
 
-std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean)
+std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cellCount, _In_ const double mean) const
 {
 	std::vector<Vector3> cellPointVec;
 
@@ -1934,10 +1978,10 @@ std::vector<VMACH::Polygon3D> Surtr::GenerateFracturePattern(_In_ const int cell
 	return GenerateVoronoi(cellPointVec);
 }
 
-Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound, 
-										 _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec, 
-										 _In_ const std::vector<Vector3>& spherePointCloud, 
-										 _In_ bool partial)
+Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound,
+										 _In_ const std::vector<VMACH::Polygon3D>& voroPolyVec,
+										 _In_ const std::vector<Vector3>& spherePointCloud,
+										 _In_ bool partial) const
 {
 	std::vector<Piece> decompose;
 	std::vector<std::set<int>> bind;
@@ -2019,13 +2063,13 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound,
 	return CompoundInfo(decompose, {}, bind);
 }
 
-void Surtr::SetExtract(_Inout_ CompoundInfo& preResult)
+void Surtr::SetExtract(_Inout_ CompoundInfo& preResult) const
 {
 	preResult.PieceExtractedConvex.resize(preResult.PieceVec.size());
 	std::transform(preResult.PieceVec.begin(), preResult.PieceVec.end(), preResult.PieceExtractedConvex.begin(), [](const Piece& p) { return Poly::ExtractFaces(p.Convex); });
 }
 
-void Surtr::_MeshIslandLoop(const int index, const Poly::Polyhedron& mesh, std::set<int>& group)
+void Surtr::_MeshIslandLoop(const int index, const Poly::Polyhedron& mesh, std::set<int>& group) const
 {
 	std::vector<int> search;
 	for (const int iAdj : mesh[index].NeighborVertexVec)
@@ -2039,7 +2083,7 @@ void Surtr::_MeshIslandLoop(const int index, const Poly::Polyhedron& mesh, std::
 		_MeshIslandLoop(iSearch, mesh, group);
 }
 
-std::vector<std::set<int>> Surtr::CheckMeshIsland(_In_ const Poly::Polyhedron& polyhedron)
+std::vector<std::set<int>> Surtr::CheckMeshIsland(_In_ const Poly::Polyhedron& polyhedron) const
 {
 	std::vector<std::set<int>> groupVec;
 	std::set<int> exclude;
@@ -2071,7 +2115,7 @@ std::vector<std::set<int>> Surtr::CheckMeshIsland(_In_ const Poly::Polyhedron& p
 	return groupVec;
 }
 
-void Surtr::HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo)
+void Surtr::HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo) const
 {
 	// FaceNode struct is only needed for this function.
 	struct FaceNode
@@ -2236,7 +2280,7 @@ void Surtr::HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo)
 	compoundInfo.CompoundBind.insert(compoundInfo.CompoundBind.end(), newBind.begin(), newBind.end());
 }
 
-void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud)
+void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud) const
 {
 	std::set<int> emptyCompound;
 
@@ -2273,34 +2317,21 @@ void Surtr::MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std:
 		compoundInfo.CompoundBind.end());
 }
 
-void Surtr::Refitting(_Inout_ std::vector<Piece>& targetPieceVec)
+void Surtr::Refitting(_Inout_ std::vector<Piece>& targetPieceVec) const
 {
-	// Axis-align DOF
-	const std::vector<Vector3> aa =
-	{
-		Vector3(1, 0, 0),
-		Vector3(0, 1, 0),
-		Vector3(0, 0, 1),
-		Vector3(1, 1, 0),
-		Vector3(0, 1, 1),
-		Vector3(1, 0, 1),
-		Vector3(1, 1, 1),
-	};
+	std::vector<std::future<Piece>> futures;
+	for (int i = 0; i < targetPieceVec.size(); i++)
+		futures.push_back(g_threadPool.enqueue(m_refittingTask, targetPieceVec[i]));
 
-	for (Piece& c : targetPieceVec)
-	{
-		Kdop::KdopContainer kdop(GenerateICHNormal(c.Mesh, std::min((int)c.Mesh.size(), 10)));
-		kdop.Calc(c.Mesh);
-
-		c.Convex = kdop.ClipWithPolyhedron(c.Convex);
-	}
+	for (int i = 0; i < futures.size(); i++)
+		targetPieceVec[i] = futures[i].get();	
 }
 
 bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 							  _In_ const std::vector<std::vector<int>>& extract,
 							  _In_ const std::vector<Vector3>& spherePointCloud,
 							  _In_ const Vector3 origin,
-							  _In_ const float radius)
+							  _In_ const float radius) const
 {
 	// Approximate.
 	bool noVertexInsideSphere = true;
@@ -2341,7 +2372,7 @@ bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 	return true;
 }
 
-bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ const Ray ray, _Out_ float& dist)
+bool Surtr::ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, _In_ const Ray ray, _Out_ float& dist) const
 {
 	float minDist = std::numeric_limits<float>::max();
 	bool hit = false;
@@ -2384,31 +2415,25 @@ void Surtr::InitCompound(const Compound& compound, bool renderConvex, const phys
 {
 	PxRigidDynamic* compoundRigidBody = gPhysics->createRigidDynamic(PxTransform(translate));
 
-	std::vector<MeshBase*> meshes;
+	std::vector<std::future<std::pair<PxConvexMeshGeometry, DynamicMesh*>>> futures;
 	for (int i = 0; i < compound.PieceVec.size(); i++)
+		futures.push_back(g_threadPool.enqueue(m_initCompoundTask, compound.PieceVec[i], compound.PieceExtractedConvex[i], renderConvex));
+
+	std::vector<DynamicMesh*> meshes(futures.size());
+	for (int i = 0; i < futures.size(); i++)
 	{
-		const Piece& piece = compound.PieceVec[i];
-		const std::vector<std::vector<int>>& extract = compound.PieceExtractedConvex[i];
+		const auto result = futures[i].get();
 
-		PxConvexMeshGeometry convexGeometry = CookingConvex(piece, extract);
-		PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, convexGeometry, *gMaterial);
-
-		std::vector<VertexNormalColor> vertexData;
-		std::vector<uint32_t> indexData;
-
-		if (TRUE == renderConvex)
-			Poly::RenderPolyhedronNormal(vertexData, indexData, piece.Convex, extract, true);
-		else
-			Poly::RenderPolyhedronNormal(vertexData, indexData, piece.Mesh, Poly::ExtractFaces(piece.Mesh), false);
-
-		DynamicMesh* mesh = PrepareDynamicMeshResource(vertexData, indexData, true);
-		meshes.push_back(mesh);
+		PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, result.first, *gMaterial);
+		meshes[i] = result.second;
 	}
 
 	PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
 	gScene->addActor(*compoundRigidBody);
 
+	// #TODO : HOT-SPOT! 0.5ms
 	m_fractureStorage.CompoundVec.push_back(compound);
+
 	m_fractureStorage.RigidDynamicVec.push_back(compoundRigidBody);
 	m_fractureStorage.CompoundMeshVec.push_back(meshes);
 	m_structuredBufferData.resize(m_structuredBufferData.size() + meshes.size(), MeshSB(XMMatrixIdentity()));
@@ -2596,6 +2621,8 @@ void Surtr::LoadModelData(_In_ const std::string fileName,
 			indices.push_back(scene->mMeshes[0]->mFaces[i].mIndices[j]);
 		}
 	}
+
+	OutputDebugStringWFormat(L"Mesh Vertex: %d / Mesh Index: %d\n", vertices.size(), indices.size());
 }
 
 StaticMesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices)
@@ -2701,21 +2728,12 @@ StaticMesh* Surtr::PrepareMeshResource(_In_ const std::vector<VertexNormalColor>
 
 DynamicMesh* Surtr::PrepareDynamicMeshResource(_In_ const std::vector<VertexNormalColor>& vertices, _In_ const std::vector<uint32_t>& indices, bool usePool)
 {
-	if (TRUE == usePool)
+	if (TRUE == usePool && FALSE == m_dynamicMeshPool.empty())
 	{
 		DynamicMesh* dynamicMesh = m_dynamicMeshPool.front();
 		m_dynamicMeshPool.pop();
 
-		dynamicMesh->VertexData = vertices;
-		dynamicMesh->IndexData = indices;
-		dynamicMesh->VertexCount = vertices.size();
-		dynamicMesh->IndexCount = indices.size();
-		dynamicMesh->RenderOption = (MeshBase::RenderOptionType::SOLID | MeshBase::RenderOptionType::WIREFRAME);
-		dynamicMesh->RenderVBSize = sizeof(VertexNormalColor) * vertices.size();
-		dynamicMesh->RenderIBSize = sizeof(uint32_t) * indices.size();
-
-		dynamicMesh->UploadVB();
-		dynamicMesh->UploadIB();
+		UpdateDynamicMesh(dynamicMesh, vertices, indices);
 
 		return dynamicMesh;
 	}
