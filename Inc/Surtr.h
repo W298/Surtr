@@ -92,29 +92,32 @@ private:
 		INT			GeneralFracturePatternCellCnt = 1024;
 	};
 
+	// Always allocated at heap.
 	struct Piece
 	{
 		Poly::Polyhedron	Convex;
 		Poly::Polyhedron	Mesh;
+
+		Piece(const Poly::Polyhedron& convex, const Poly::Polyhedron& mesh) : Convex(convex), Mesh(mesh) {}
 	};
 
 	struct CompoundInfo
 	{
-		std::vector<Piece>							PieceVec;
+		std::vector<Piece*>							PieceVec;
 		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
 		std::vector<std::set<int>>					CompoundBind;
 	};
 
 	struct Compound
 	{
-		std::vector<Piece>							PieceVec;
+		std::vector<Piece*>							PieceVec;
 		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
 	};
 
 	struct FractureResult
 	{
-		UINT                ICHFaceCnt = 0;
-		UINT                ACHErrorPointCnt = 0;
+		UINT										ICHFaceCnt = 0;
+		UINT										ACHErrorPointCnt = 0;
 	};
 
 	struct FractureStorage
@@ -172,7 +175,7 @@ private:
 
 	void							HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo) const;
 	void							MergeOutOfImpact(_Inout_ CompoundInfo& compoundInfo, _In_ const std::vector<Vector3>& spherePointCloud) const;
-	void							Refitting(_Inout_ std::vector<Piece>& targetPieceVec) const;
+	void							Refitting(_Inout_ std::vector<Piece*>& targetPieceVec) const;
 
 	// Utility
 	bool							ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
@@ -186,7 +189,7 @@ private:
 														  _Out_ float& dist) const;
 
 	void							InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate = physx::PxVec3(0, 0, 0));
-	physx::PxConvexMeshGeometry		CookingConvex(const Piece& piece, const std::vector<std::vector<int>>& extract);
+	physx::PxConvexMeshGeometry		CookingConvex(const Piece* piece, const std::vector<std::vector<int>>& extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
 	// Helper functions
@@ -241,8 +244,10 @@ private:
 	static constexpr UINT								c_nSBCnt				= 5000;
 	static constexpr UINT								c_nDynamicMeshPoolCnt	= 500;
 
-	std::function<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>(const Piece& piece, const std::vector<std::vector<int>>& extract, bool renderConvex)> m_initCompoundTask;
-	std::function<Piece(const Piece& piece)> m_refittingTask;
+	std::function
+		<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>
+		(const Piece* piece, const std::vector<std::vector<int>>& extract, bool renderConvex)>	m_initCompoundTask;
+	std::function<void(Piece* piece)>															m_refittingTask;
 
 	// Memory Pools
 	std::queue<DynamicMesh*>							m_dynamicMeshPool;
