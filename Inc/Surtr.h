@@ -101,17 +101,19 @@ private:
 		Piece(const Poly::Polyhedron& convex, const Poly::Polyhedron& mesh) : Convex(convex), Mesh(mesh) {}
 	};
 
+	typedef std::vector<std::vector<int>> Extract;
+
 	struct CompoundInfo
 	{
 		std::vector<Piece*>							PieceVec;
-		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
+		std::vector<Extract*>						PieceExtractedConvex;
 		std::vector<std::set<int>>					CompoundBind;
 	};
 
 	struct Compound
 	{
 		std::vector<Piece*>							PieceVec;
-		std::vector<std::vector<std::vector<int>>>	PieceExtractedConvex;
+		std::vector<Extract*>						PieceExtractedConvex;
 	};
 
 	struct FractureResult
@@ -179,7 +181,7 @@ private:
 
 	// Utility
 	bool							ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
-													  _In_ const std::vector<std::vector<int>>& extract,
+													  _In_ const Extract* extract,
 													  _In_ const std::vector<Vector3>& spherePointCloud,
 													  _In_ const Vector3 origin,
 													  _In_ const float radius) const;
@@ -189,7 +191,7 @@ private:
 														  _Out_ float& dist) const;
 
 	void							InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate = physx::PxVec3(0, 0, 0));
-	physx::PxConvexMeshGeometry		CookingConvex(const Piece* piece, const std::vector<std::vector<int>>& extract);
+	physx::PxConvexMeshGeometry		CookingConvex(const Piece* piece, const Extract* extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
 
 	// Helper functions
@@ -246,7 +248,7 @@ private:
 
 	std::function
 		<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>
-		(const Piece* piece, const std::vector<std::vector<int>>& extract, bool renderConvex)>	m_initCompoundTask;
+		(const Piece* piece, const Extract* extract, bool renderConvex)>	m_initCompoundTask;
 	std::function<void(Piece* piece)>															m_refittingTask;
 
 	// Memory Pools

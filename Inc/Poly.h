@@ -29,11 +29,12 @@ struct Vertex
 };
 
 typedef	std::vector<Poly::Vertex> Polyhedron;
+typedef std::vector<std::vector<int>> Extract;
 
 // Manipulating Polyhedron.
 void							InitPolyhedron(Polyhedron& polyhedron, const std::vector<Vector3>& positionVec, const std::vector<std::vector<int>>& neighborVec);
 void							Moments(double& zerothMoment, Vector3& firstMoment, const Polyhedron& polyhedron);
-std::vector<std::vector<int>>	ExtractFaces(const Polyhedron& polyhedron);
+Extract*						ExtractFaces(const Polyhedron& polyhedron);
 std::vector<std::vector<int>>	ExtractNeighborFromMesh(std::vector<Vector3>& vertices, std::vector<int>& indices);
 
 void							ClipPolyhedron(Polyhedron& polyhedron, const std::vector<Plane>& planes);
@@ -62,7 +63,7 @@ void							RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 void							RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
 												 std::vector<uint32_t>& indexData, 
 												 const Polyhedron& poly, 
-												 const std::vector<std::vector<int>>& extract, 
+												 const Extract* extract, 
 												 bool isConvex = true,
 												 Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
 

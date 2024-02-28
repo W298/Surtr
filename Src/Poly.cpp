@@ -64,7 +64,7 @@ void Poly::Moments(double& zerothMoment, Vector3& firstMoment, const Polyhedron&
 
 		// Walk the facets
 		const auto facets = ExtractFaces(polyhedron);
-		for (const auto& facet : facets)
+		for (const auto& facet : *facets)
 		{
 			const auto n = facet.size();
 			const auto p0 = polyhedron[facet[0]].Position - origin;
@@ -86,9 +86,9 @@ void Poly::Moments(double& zerothMoment, Vector3& firstMoment, const Polyhedron&
 	}
 }
 
-std::vector<std::vector<int>> Poly::ExtractFaces(const Polyhedron& polyhedron)
+Poly::Extract* Poly::ExtractFaces(const Polyhedron& polyhedron)
 {
-	std::vector<std::vector<int>> faceVertices;
+	Extract* faceVertices = new Extract();
 	std::set<std::pair<int, int>> visitedEdge;
 
 	for (int i = 0; i < polyhedron.size(); i++)
@@ -117,7 +117,7 @@ std::vector<std::vector<int>> Poly::ExtractFaces(const Polyhedron& polyhedron)
 				}
 
 				visitedEdge.insert(std::make_pair(iprev, inext)); // Final edge connecting last->first vertex
-				faceVertices.push_back(face);
+				faceVertices->push_back(face);
 			}
 		}
 	}
@@ -505,7 +505,7 @@ void Poly::ClipPolyhedron(Polyhedron& polyhedron, const std::vector<Plane>& plan
 
 			std::vector<std::vector<int>> maintainFaces;
 			std::vector<std::vector<int>> capFaces;
-			for (const std::vector<int>& face : faces)
+			for (const std::vector<int>& face : *faces)
 			{
 				if (face.size() > 3)
 					capFaces.push_back(face);
@@ -622,7 +622,7 @@ void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 								  bool isConvex, 
 								  Vector3 color)
 {
-	const auto faceVec = Poly::ExtractFaces(poly);
+	const auto faceVec = *Poly::ExtractFaces(poly);
 	for (int i = 0; i < faceVec.size(); i++)
 	{
 		VMACH::PolygonFace f = { isConvex };
@@ -681,7 +681,7 @@ void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData, 
 							std::vector<uint32_t>& indexData, 
 							const Polyhedron& poly, 
-							const std::vector<std::vector<int>>& extract, 
+							const Extract* extract, 
 							bool isConvex, 
 							Vector3 color)
 {
@@ -695,7 +695,7 @@ void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData,
 
 	if (TRUE == isConvex)
 	{
-		for (const auto& f : extract)
+		for (const auto& f : *extract)
 		{
 			for (int v = 1; v < f.size() - 1; v++)
 			{
@@ -707,7 +707,7 @@ void Poly::RenderPolyhedron(std::vector<VertexNormalColor>& vertexData,
 	}
 	else
 	{
-		for (const auto& f : extract)
+		for (const auto& f : *extract)
 			for (const int v : EarClipping(poly, f))
 				indexData.push_back(vertexOffset + f[v]);
 	}

@@ -593,8 +593,7 @@ void Surtr::Render()
 							}
 							m_fractureStorage.CompoundMeshVec.erase(std::next(m_fractureStorage.CompoundMeshVec.begin(), targetIndex));
 							
-							// Put target compound infomation at garbage.
-							std::vector<Piece*> garbagePieceVec = m_fractureStorage.CompoundVec[targetIndex].PieceVec;
+							// Destroy piece data.
 							m_fractureStorage.CompoundVec.erase(std::next(m_fractureStorage.CompoundVec.begin(), targetIndex));
 							
 							// Remove world matrix of target compound mesh.
@@ -607,11 +606,6 @@ void Surtr::Render()
 								InitCompound(compound, false);
 
 							TIMER_STOP_PRINT;
-
-							// Destroy piece data (located at heap).
-							for (Piece* piece : garbagePieceVec)
-								if (piece != nullptr)
-									delete piece;
 						}
 						else
 							OutputDebugStringW(L"Impact point is not valid!\n");
@@ -1452,7 +1446,7 @@ void Surtr::CreateCommandListDependentResources()
 		m_dynamicMeshPool.push(mesh);
 	}
 
-	m_initCompoundTask = [this](const Piece* piece, const std::vector<std::vector<int>>& extract, bool renderConvex) -> std::pair<PxConvexMeshGeometry, DynamicMesh*>
+	m_initCompoundTask = [this](const Piece* piece, const Extract* extract, bool renderConvex) -> std::pair<PxConvexMeshGeometry, DynamicMesh*>
 	{
 		std::vector<VertexNormalColor> vertexData;
 		std::vector<uint32_t> indexData;
@@ -1646,11 +1640,17 @@ void Surtr::OnDeviceLost()
 		m_dynamicMeshPool.pop();
 	}
 
-	// Pieces
+	// Compounds.
 	for (auto& compound : m_fractureStorage.CompoundVec)
+	{
 		for (Piece* piece : compound.PieceVec)
 			if (piece != nullptr)
 				delete piece;
+
+		for (Extract* extract : compound.PieceExtractedConvex)
+			if (extract != nullptr)
+				delete extract;
+	}
 
 	// Textures
 	m_colorLTexResource.Reset();
@@ -1847,7 +1847,7 @@ std::vector<Surtr::Compound> Surtr::DoFracture(const Compound& targetCompound)
 	for (const auto& iComp : second.CompoundBind)
 	{
 		std::vector<Piece*> pieceVec;
-		std::vector<std::vector<std::vector<int>>> extractVec;
+		std::vector<Extract*> extractVec;
 
 		for (const int iPiece : iComp)
 		{
@@ -2009,7 +2009,7 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound,
 	std::vector<std::set<int>> bind;
 
 	const std::vector<Piece*>& targetPieceVec = compound.PieceVec;
-	const std::vector<std::vector<std::vector<int>>>& extract = compound.PieceExtractedConvex;
+	const std::vector<Extract*>& extractVec = compound.PieceExtractedConvex;
 
 	// Check convex located at outside or not.
 	std::set<int> outside;
@@ -2018,7 +2018,7 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound,
 	{
 		for (int c = 0; c < targetPieceVec.size(); c++)
 		{
-			if (TRUE == ConvexOutOfSphere(targetPieceVec[c]->Convex, extract[c], spherePointCloud, m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
+			if (TRUE == ConvexOutOfSphere(targetPieceVec[c]->Convex, extractVec[c], spherePointCloud, m_fractureArgs.ImpactPosition, m_fractureArgs.ImpactRadius))
 			{
 				outside.insert(c);
 
@@ -2087,7 +2087,7 @@ Surtr::CompoundInfo Surtr::ApplyFracture(_In_ const Compound& compound,
 
 void Surtr::SetExtract(_Inout_ CompoundInfo& preResult) const
 {
-	preResult.PieceExtractedConvex.resize(preResult.PieceVec.size());
+	preResult.PieceExtractedConvex.resize(preResult.PieceVec.size(), nullptr);
 	std::transform(preResult.PieceVec.begin(), preResult.PieceVec.end(), preResult.PieceExtractedConvex.begin(), [](const Piece* p) { return Poly::ExtractFaces(p->Convex); });
 }
 
@@ -2158,7 +2158,7 @@ void Surtr::HandleConvexIsland(_Inout_ CompoundInfo& compoundInfo) const
 		std::vector<FaceNode> nodes;
 		for (const int cid : localBind)
 		{
-			for (const auto& poly : compoundInfo.PieceExtractedConvex[cid])
+			for (const auto& poly : *compoundInfo.PieceExtractedConvex[cid])
 			{
 				std::vector<Vector3> points(poly.size());
 				std::transform(poly.begin(), poly.end(), points.begin(), [&](const int v) { return compoundInfo.PieceVec[cid]->Convex[v].Position; });
@@ -2350,7 +2350,7 @@ void Surtr::Refitting(_Inout_ std::vector<Piece*>& targetPieceVec) const
 }
 
 bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
-							  _In_ const std::vector<std::vector<int>>& extract,
+							  _In_ const Extract* extract,
 							  _In_ const std::vector<Vector3>& spherePointCloud,
 							  _In_ const Vector3 origin,
 							  _In_ const float radius) const
@@ -2372,7 +2372,7 @@ bool Surtr::ConvexOutOfSphere(_In_ const Poly::Polyhedron& polyhedron,
 	for (const auto& po : spherePointCloud)
 	{
 		bool contain = true;
-		for (const auto& f : extract)
+		for (const auto& f : *extract)
 		{
 			Vector3 normal = (polyhedron[f[1]].Position - polyhedron[f[0]].Position).Cross(polyhedron[f[2]].Position - polyhedron[f[0]].Position);
 			normal.Normalize();
@@ -2446,7 +2446,9 @@ void Surtr::InitCompound(const Compound& compound, bool renderConvex, const phys
 	{
 		const auto result = futures[i].get();
 
-		PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, result.first, *gMaterial);
+		if (result.first.convexMesh != nullptr)
+			PxShape* convexShape = PxRigidActorExt::createExclusiveShape(*compoundRigidBody, result.first, *gMaterial);
+		
 		meshes[i] = result.second;
 	}
 
@@ -2461,7 +2463,7 @@ void Surtr::InitCompound(const Compound& compound, bool renderConvex, const phys
 	m_structuredBufferData.resize(m_structuredBufferData.size() + meshes.size(), MeshSB(XMMatrixIdentity()));
 }
 
-PxConvexMeshGeometry Surtr::CookingConvex(const Piece* piece, const std::vector<std::vector<int>>& extract)
+PxConvexMeshGeometry Surtr::CookingConvex(const Piece* piece, const Extract* extract)
 {
 	std::vector<PxVec3> convexVertexData(piece->Convex.size());
 	std::transform(piece->Convex.begin(),
