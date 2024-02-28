@@ -15,12 +15,12 @@ struct OpaqueCBType
 
 struct RootConstantType
 {
-    uint value;
+    uint id;
     uint debug;
 };
 
 ConstantBuffer<OpaqueCBType> cb : register(b0);
-ConstantBuffer<RootConstantType> meshID : register(b4, space0);
+ConstantBuffer<RootConstantType> rootConstant : register(b4, space0);
 
 
 //--------------------------------------------------------------------------------------
@@ -75,15 +75,18 @@ VS_OUTPUT VS(VS_INPUT input)
     VS_OUTPUT output;
     
     // Multiply WVP matrices.
-    if (meshID.value != 99999)
-        output.position = mul(float4(input.position, 1.0f), sb[meshID.value].worldMatrix);
+    if (rootConstant.id != 99999)
+        output.position = mul(float4(input.position, 1.0f), sb[rootConstant.id].worldMatrix);
     else
         output.position = float4(input.position, 1.0f);
     
     output.position = mul(output.position, cb.viewProjMatrix);
     
-    output.normal = input.normal;
     output.color = input.color;
+    if (rootConstant.debug == 1)
+        output.color = float3(0.5, 0, 0); 
+    
+    output.normal = input.normal;
     output.catPos = input.position;
     
     return output;

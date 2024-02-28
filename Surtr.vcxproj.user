@@ -6,8 +6,8 @@
     <RemoteDebuggerCommandArguments>2 8192 0 1920 1080</RemoteDebuggerCommandArguments>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>2 8192 0 1920 1080</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>3 8192 0 1920 1080</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
-    <RemoteDebuggerCommandArguments>2 8192 0 1920 1080</RemoteDebuggerCommandArguments>
+    <RemoteDebuggerCommandArguments>3 8192 0 1920 1080</RemoteDebuggerCommandArguments>
   </PropertyGroup>
 </Project>

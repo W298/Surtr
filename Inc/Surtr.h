@@ -90,6 +90,8 @@ private:
 		INT			InitialDecomposeCellCnt = 64;
 		INT			PartialFracturePatternCellCnt = 128;
 		INT			GeneralFracturePatternCellCnt = 1024;
+
+		FLOAT		TargetAdder = 0.01f;
 	};
 
 	// Always allocated at heap.
@@ -156,6 +158,7 @@ private:
 	Compound						PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
 													_In_ const std::vector<uint32_t>& visualMeshIndices);
 	
+	void							ExecuteFractureRoutine();
 	std::vector<Compound>			DoFracture(const Compound& targetCompound);
 
 	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit) const;
@@ -230,6 +233,7 @@ private:
 	// Input
 	std::unordered_map<UINT8, bool>                     m_keyTracker;
 	bool												m_isFlightMode;
+	bool												m_executeFractureImmediate;
 
 	// Application state
 	HWND                                                m_window;
@@ -246,10 +250,9 @@ private:
 	static constexpr UINT								c_nSBCnt				= 5000;
 	static constexpr UINT								c_nDynamicMeshPoolCnt	= 500;
 
-	std::function
-		<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>
-		(const Piece* piece, const Extract* extract, bool renderConvex)>	m_initCompoundTask;
-	std::function<void(Piece* piece)>															m_refittingTask;
+	std::function<std::pair<physx::PxConvexMeshGeometry, DynamicMesh*>(const Piece* piece, const Extract* extract, bool renderConvex)>				m_initCompoundTask;
+	std::function<void(Piece* piece)>																												m_refittingTask;
+	std::function<std::vector<Piece*>(const VMACH::Polygon3D& voroPoly, const std::vector<Piece*>& targetPieceVec, const std::set<int>& outside)>	m_fractureTask;
 
 	// Memory Pools
 	std::queue<DynamicMesh*>							m_dynamicMeshPool;
@@ -325,8 +328,12 @@ private:
 	std::vector<MeshSB>									m_structuredBufferData;
 	physx::PxRigidActor*								m_targetRigidBody;
 
-	DynamicMesh*										m_debugMesh;
+	DynamicMesh*										m_patternBoundaryMesh;
 	StaticMesh*											m_groundMesh;
+	DynamicMesh*										m_impactPointMesh;
+
+	std::vector<VertexNormalColor>						m_sphereVertexData;
+	std::vector<uint32_t>								m_sphereIndexData;
 
 	// Shadow
 	std::unique_ptr<ShadowMap>  			            m_shadowMap;

@@ -30,8 +30,9 @@ struct MeshBase
 	uint32_t										    VertexCount;
 	uint32_t										    IndexCount;
 	uint8_t												RenderOption;
+	uint32_t											DebugValue;
 
-	MeshBase() : VBV({ 0 }), IBV({ 0 }), VertexCount(0), IndexCount(0), RenderOption(SOLID | WIREFRAME) {}
+	MeshBase() : VBV({ 0 }), IBV({ 0 }), VertexCount(0), IndexCount(0), RenderOption(SOLID | WIREFRAME), DebugValue(0) {}
 	
 	MeshBase(const std::vector<VertexNormalColor>& vertexData, const std::vector<uint32_t>& indexData) : 
 		VBV({ 0 }), 
@@ -40,7 +41,8 @@ struct MeshBase
 		IndexData(indexData), 
 		VertexCount(vertexData.size()), 
 		IndexCount(indexData.size()), 
-		RenderOption(SOLID | WIREFRAME) {}
+		RenderOption(SOLID | WIREFRAME),
+		DebugValue(0) {}
 
 	~MeshBase()
 	{
@@ -50,9 +52,9 @@ struct MeshBase
 		IndexData.clear();
 	}
 
-	void Render(ID3D12GraphicsCommandList* commandList, uint32_t meshIndex, uint32_t debug = 0)
+	void Render(ID3D12GraphicsCommandList* commandList, uint32_t meshIndex)
 	{
-		const uint32_t root[] = { meshIndex, debug };
+		const uint32_t root[] = { meshIndex, DebugValue };
 
 		commandList->SetGraphicsRoot32BitConstants(3, 2, &root, 0);
 
