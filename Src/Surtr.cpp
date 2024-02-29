@@ -1158,6 +1158,9 @@ void Surtr::CreateDeviceDependentResources()
 			pvdClient->setScenePvdFlag(PxPvdSceneFlag::eTRANSMIT_SCENEQUERIES, true);
 		}
 		gMaterial = gPhysics->createMaterial(0.5f, 0.5f, 0.1f);
+
+		PhysicsEventCallback* eventCallback = new PhysicsEventCallback();
+		gScene->setSimulationEventCallback(eventCallback);
 	}
 }
 
@@ -2511,6 +2514,8 @@ void Surtr::InitCompound(const Compound& compound, bool renderConvex, const phys
 		
 		meshes[i] = result.second;
 	}
+
+	compoundRigidBody->setContactReportThreshold(0);
 
 	PxRigidBodyExt::updateMassAndInertia(*compoundRigidBody, 10.0f);
 	gScene->addActor(*compoundRigidBody);

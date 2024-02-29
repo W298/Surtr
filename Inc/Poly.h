@@ -56,7 +56,7 @@ void							RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 void							RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 													   std::vector<uint32_t>& indexData,
 													   const Polyhedron& poly,
-													   const std::vector<std::vector<int>>& extract,
+													   const Extract* extract,
 													   bool isConvex,
 													   Vector3 color = Vector3(0.25f, 0.25f, 0.25f));
 

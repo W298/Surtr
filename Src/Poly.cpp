@@ -650,21 +650,21 @@ void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 void Poly::RenderPolyhedronNormal(std::vector<VertexNormalColor>& vertexData,
 								  std::vector<uint32_t>& indexData,
 								  const Polyhedron& poly,
-								  const std::vector<std::vector<int>>& extract,
+								  const Extract* extract,
 								  bool isConvex,
 								  Vector3 color)
 {
-	for (int i = 0; i < extract.size(); i++)
+	for (const auto& faceInfo : *extract)
 	{
 		VMACH::PolygonFace f = { isConvex };
-		for (int j = 0; j < extract[i].size(); j++)
-			f.AddVertex(poly[extract[i][j]].Position);
+		for (int j = 0; j < faceInfo.size(); j++)
+			f.AddVertex(poly[faceInfo[j]].Position);
 
 		if (FALSE == isConvex)
 		{
-			const Vector3 a = poly[extract[i][0]].Position;
-			const Vector3 b = poly[extract[i][1]].Position;
-			const Vector3 c = poly[extract[i][2]].Position;
+			const Vector3 a = poly[faceInfo[0]].Position;
+			const Vector3 b = poly[faceInfo[1]].Position;
+			const Vector3 c = poly[faceInfo[2]].Position;
 
 			Vector3 normal = (b - a).Cross(c - a);
 
