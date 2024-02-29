@@ -4,7 +4,8 @@
 #include "voro++.hh"
 
 #define PVD_HOST "127.0.0.1"
-#define MAX_NUM_ACTOR_SHAPES 128
+#define MAX_NUM_ACTOR_SHAPES 512
+#define MAX_NUM_ACTOR_HIT 512
 
 extern void ExitGame() noexcept;
 
@@ -198,42 +199,58 @@ void Surtr::OnMouseDown()
 	PxVec3 origin(camPosV3.x, camPosV3.y, camPosV3.z);
 	PxVec3 direction(rayDir.x, rayDir.y, rayDir.z);
 	PxReal maxDistance = 1000;
-	PxRaycastBuffer hit;
 
+	for (const auto& compoundMesh : m_fractureStorage.CompoundMeshVec)
+		for (DynamicMesh* mesh : compoundMesh)
+			mesh->DebugValue = 0;
+	
+	PxRaycastBuffer hit;
 	if (TRUE == gScene->raycast(origin, direction, maxDistance, hit))
 	{
 		Vector3 hitPos = Vector3(hit.block.position.x, hit.block.position.y, hit.block.position.z);
-
 		m_fractureArgs.ImpactPosition = hitPos + rayDir * m_fractureArgs.TargetAdder;
-		m_targetRigidBody = hit.block.actor;
 
-		auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), m_targetRigidBody);
-		if (itr != m_fractureStorage.RigidDynamicVec.end())
+		if (TRUE == m_fractureArgs.RadialMode)
 		{
-			int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
-			std::vector<DynamicMesh*>& targetMeshVec = m_fractureStorage.CompoundMeshVec[targetIndex];
+			PxOverlapHit overlapBuffer[MAX_NUM_ACTOR_HIT];
+			PxOverlapBuffer buf(overlapBuffer, MAX_NUM_ACTOR_HIT);
 
+			PxSphereGeometry overlapSphere(m_fractureArgs.ImpactRadius / 2.0);
+			PxTransform shapePose = PxTransform(PxVec3(m_fractureArgs.ImpactPosition.x, m_fractureArgs.ImpactPosition.y, m_fractureArgs.ImpactPosition.z));
 
-			for (const auto& compoundMesh : m_fractureStorage.CompoundMeshVec)
-				for (DynamicMesh* mesh : compoundMesh)
-					mesh->DebugValue = 0;
-
-			for (DynamicMesh* mesh : targetMeshVec)
-				mesh->DebugValue = 1;
+			if (TRUE == gScene->overlap(overlapSphere, shapePose, buf, PxQueryFilterData(PxQueryFlag::eDYNAMIC)))
+			{
+				m_affectRigidBodyVec.clear();
+				for (int i = 0; i < buf.nbTouches; i++)
+				{
+					PxRigidActor* target = buf.touches[i].actor;
+					
+					if (1e-4 < ((PxRigidDynamic*)target)->getMass())
+						m_affectRigidBodyVec.push_back(target);
+					else
+						SetRigidBodyDebugValue(target, 2);
+				}
+			}
 		}
-
-		std::vector<VertexNormalColor> vertices(m_sphereVertexData.size());
-		std::transform(m_sphereVertexData.begin(),
-					   m_sphereVertexData.end(),
-					   vertices.begin(),
-					   [&](const VertexNormalColor& vnc) 
-					   { return VertexNormalColor(vnc.Position * m_fractureArgs.ImpactRadius + m_fractureArgs.ImpactPosition, XMFLOAT3(), XMFLOAT3(0, 0, 1)); });
-
-		UpdateDynamicMesh(m_impactPointMesh, vertices, m_impactPointMesh->IndexData);
-
-		if (TRUE == m_executeFractureImmediate)
-			ExecuteFractureRoutine();
+		else
+		{
+			m_affectRigidBodyVec.clear();
+			m_affectRigidBodyVec.push_back(hit.block.actor);
+		}
 	}
+
+	for (PxRigidActor* rigidBody : m_affectRigidBodyVec)
+		SetRigidBodyDebugValue(rigidBody, 1);
+
+	std::vector<VertexNormalColor> vertices(m_sphereVertexData.size());
+	std::transform(m_sphereVertexData.begin(), m_sphereVertexData.end(), vertices.begin(),
+				   [&](const VertexNormalColor& vnc)
+				   { return VertexNormalColor(vnc.Position * m_fractureArgs.ImpactRadius + m_fractureArgs.ImpactPosition, XMFLOAT3(), XMFLOAT3(0, 0, 1)); });
+	UpdateDynamicMesh(m_impactPointMesh, vertices, m_impactPointMesh->IndexData);
+
+	if (TRUE == m_executeFractureImmediate)
+		for (PxRigidActor* rigidBody : m_affectRigidBodyVec)
+			ExecuteFractureRoutine(rigidBody);
 }
 
 // Updates the world.
@@ -560,6 +577,8 @@ void Surtr::Render()
 
 					ImGui::Text("[Arguments]");
 
+					ImGui::Checkbox("Execute Immediate", &m_executeFractureImmediate);
+					ImGui::Checkbox("Radial Mode", &m_fractureArgs.RadialMode);
 					ImGui::Checkbox("Partial Fracture", &m_fractureArgs.PartialFracture);
 					ImGui::SliderFloat("Impact Radius", &m_fractureArgs.ImpactRadius, 0.1f, 10.0f);
 					ImGui::Text("Impact Point: %.3f %.3f %.3f", m_fractureArgs.ImpactPosition.x, m_fractureArgs.ImpactPosition.y, m_fractureArgs.ImpactPosition.z);
@@ -570,9 +589,11 @@ void Surtr::Render()
 
 					ImGui::Dummy(ImVec2(0.0f, 10.0f));
 
-					ImGui::Checkbox("Execute Immediate", &m_executeFractureImmediate);
 					if (ImGui::Button("Simulate!"))
-						ExecuteFractureRoutine();
+					{
+						for (PxRigidActor* rigidBody : m_affectRigidBodyVec)
+							ExecuteFractureRoutine(rigidBody);
+					}
 
 					ImGui::Text("[Results]");
 					ImGui::Text("ICH Face Count: %d", m_fractureResult.ICHFaceCnt);
@@ -1802,9 +1823,9 @@ Surtr::Compound Surtr::PrepareFracture(_In_ const std::vector<VertexNormalColor>
 	return result;
 }
 
-void Surtr::ExecuteFractureRoutine()
+void Surtr::ExecuteFractureRoutine(physx::PxRigidActor* targetRididBody)
 {
-	auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), m_targetRigidBody);
+	auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), targetRididBody);
 	if (itr != m_fractureStorage.RigidDynamicVec.end())
 	{
 		TIMER_INIT;
@@ -1830,7 +1851,7 @@ void Surtr::ExecuteFractureRoutine()
 		std::vector<Compound> fracturedCompoundVec = DoFracture(m_fractureStorage.CompoundVec[targetIndex]);
 
 		// Destroy target rigidbody.
-		gScene->removeActor(*m_targetRigidBody);
+		gScene->removeActor(*targetRididBody);
 		m_fractureStorage.RigidDynamicVec.erase(std::next(m_fractureStorage.RigidDynamicVec.begin(), targetIndex));
 
 		// Destroy target mesh. Also Re-cycle mesh buffer.
@@ -2585,6 +2606,18 @@ PxConvexMeshGeometry Surtr::CookingConvexManual(const Poly::Polyhedron& polyhedr
 	PxConvexMesh* convexMesh = gPhysics->createConvexMesh(input);
 
 	return PxConvexMeshGeometry(convexMesh, PxMeshScale(), PxConvexMeshGeometryFlag::eTIGHT_BOUNDS);
+}
+
+void Surtr::SetRigidBodyDebugValue(PxRigidActor* rigidBody, const uint32_t debugValue)
+{
+	auto itr = std::find(m_fractureStorage.RigidDynamicVec.begin(), m_fractureStorage.RigidDynamicVec.end(), rigidBody);
+	if (itr != m_fractureStorage.RigidDynamicVec.end())
+	{
+		int targetIndex = std::distance(m_fractureStorage.RigidDynamicVec.begin(), itr);
+		std::vector<DynamicMesh*>& targetMeshVec = m_fractureStorage.CompoundMeshVec[targetIndex];
+		for (DynamicMesh* mesh : targetMeshVec)
+			mesh->DebugValue = debugValue;
+	}
 }
 
 void Surtr::CreateTextureResource(

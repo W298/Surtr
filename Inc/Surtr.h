@@ -76,19 +76,20 @@ private:
 	{
 		INT			ICHIncludePointLimit = 20;
 		FLOAT		ACHPlaneGapInverse = 2000.0f;
-		INT			RefittingPointLimit = 8;
+		INT			RefittingPointLimit = 4;
 
 		INT			Seed = 46354;
 
 		XMFLOAT3	ImpactPosition;
 		FLOAT		ImpactRadius = 1.0f;
 
+		bool		RadialMode = true;
 		bool		PartialFracture = true;
-		FLOAT		PartialFracturePatternDist = 0.02f;
+		FLOAT		PartialFracturePatternDist = 0.01f;
 		FLOAT		GeneralFracturePatternDist = 1.0f;
 
 		INT			InitialDecomposeCellCnt = 64;
-		INT			PartialFracturePatternCellCnt = 128;
+		INT			PartialFracturePatternCellCnt = 64;
 		INT			GeneralFracturePatternCellCnt = 1024;
 
 		FLOAT		TargetAdder = 0.01f;
@@ -158,7 +159,7 @@ private:
 	Compound						PrepareFracture(_In_ const std::vector<VertexNormalColor>& visualMeshVertices,
 													_In_ const std::vector<uint32_t>& visualMeshIndices);
 	
-	void							ExecuteFractureRoutine();
+	void							ExecuteFractureRoutine(physx::PxRigidActor* targetRididBody);
 	std::vector<Compound>			DoFracture(const Compound& targetCompound);
 
 	std::vector<Vector3>			GenerateICHNormal(_In_ const std::vector<Vector3>& vertices, _In_ const int ichIncludePointLimit) const;
@@ -189,13 +190,15 @@ private:
 													  _In_ const Vector3 origin,
 													  _In_ const float radius) const;
 
-	bool							ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex, 
-														  _In_ const Ray ray, 
+	bool							ConvexRayIntersection(_In_ const VMACH::Polygon3D& convex,
+														  _In_ const Ray ray,
 														  _Out_ float& dist) const;
 
 	void							InitCompound(const Compound& compound, bool renderConvex, const physx::PxVec3 translate = physx::PxVec3(0, 0, 0));
 	physx::PxConvexMeshGeometry		CookingConvex(const Piece* piece, const Extract* extract);
 	physx::PxConvexMeshGeometry		CookingConvexManual(const Poly::Polyhedron& polyhedron, const std::vector<std::vector<int>>& extract);
+
+	void							SetRigidBodyDebugValue(physx::PxRigidActor* rigidBody, const uint32_t debugValue);
 
 	// Helper functions
 	void							CreateTextureResource(_In_ const wchar_t* fileName,
@@ -326,7 +329,7 @@ private:
 	UINT                                                m_modelIndex;
 	std::vector<Vector3>								m_spherePointCloud;
 	std::vector<MeshSB>									m_structuredBufferData;
-	physx::PxRigidActor*								m_targetRigidBody;
+	std::vector<physx::PxRigidActor*>					m_affectRigidBodyVec;
 
 	DynamicMesh*										m_patternBoundaryMesh;
 	StaticMesh*											m_groundMesh;

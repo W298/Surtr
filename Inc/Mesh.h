@@ -191,6 +191,8 @@ struct DynamicMesh : public MeshBase
 		
 		RenderVBSize = 0;
 		RenderIBSize = 0;
+
+		DebugValue = 0;
 	}
 
 	void UpdateMeshData(const std::vector<VertexNormalColor>& vertexData, const std::vector<uint32_t>& indexData)

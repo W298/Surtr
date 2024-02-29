@@ -84,7 +84,9 @@ VS_OUTPUT VS(VS_INPUT input)
     
     output.color = input.color;
     if (rootConstant.debug == 1)
-        output.color = float3(0.5, 0, 0); 
+        output.color = float3(0.5, 0, 0);
+    else if (rootConstant.debug == 2)
+        output.color = float3(1, 0.5, 0);
     
     output.normal = input.normal;
     output.catPos = input.position;
